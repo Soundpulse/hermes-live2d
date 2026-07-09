@@ -34,7 +34,9 @@ html, body {
 
 .bubble {
   position: fixed;
-  top: 3%;
+  /* Vertical position is set dynamically in main.ts (positionBubble) so the
+     tail stays anchored just above the model's head. */
+  bottom: 60%;
   left: 50%;
   transform: translateX(-50%);
   max-width: 75%;
