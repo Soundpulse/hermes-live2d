@@ -37,6 +37,19 @@ pub struct SpeakReq {
     #[serde(default)]
     pub audio_url: Option<String>,
     #[serde(default)]
+    pub audio_data: Option<String>,
+    #[serde(default)]
+    pub audio_format: Option<String>,
+    #[serde(default)]
+    pub expression: Option<u32>,
+}
+
+/// Payload emitted to the frontend — audio always arrives as a URL/path,
+/// never as inline base64.
+#[derive(Debug, Clone, Serialize)]
+pub struct SpeakEvent {
+    pub text: Option<String>,
+    pub audio_url: Option<String>,
     pub expression: Option<u32>,
 }
 
@@ -149,11 +162,54 @@ async fn motion_handler(
     Ok(ApiResponse::success("motion event emitted"))
 }
 
+/// Decode base64 audio and write it to `<dir>/speak.<ext>`, returning the path.
+/// A single well-known filename is overwritten on every call, so uploaded
+/// audio is discarded automatically by the next request.
+fn write_speak_audio(
+    dir: &std::path::Path,
+    audio_data: &str,
+    audio_format: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
+    use base64::Engine;
+
+    let ext = match audio_format.unwrap_or("mp3") {
+        f @ ("mp3" | "wav" | "ogg" | "flac") => f,
+        other => return Err(format!("unsupported audio_format: {other}")),
+    };
+
+    // Tolerate line-wrapped base64 (e.g. from `base64` without -w0)
+    let cleaned: String = audio_data.chars().filter(|c| !c.is_whitespace()).collect();
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(cleaned)
+        .map_err(|e| format!("invalid base64 audio_data: {e}"))?;
+
+    std::fs::create_dir_all(dir).map_err(|e| format!("failed to create {}: {e}", dir.display()))?;
+    let path = dir.join(format!("speak.{ext}"));
+    std::fs::write(&path, bytes).map_err(|e| format!("failed to write audio: {e}"))?;
+    Ok(path)
+}
+
 async fn speak_handler(
     State(app): State<AppHandle>,
     Json(payload): Json<SpeakReq>,
 ) -> Result<Json<ApiResponse>, (StatusCode, Json<ApiResponse>)> {
-    app.emit("api:speak", &payload)
+    // Inline audio takes precedence over audio_url
+    let audio_url = match &payload.audio_data {
+        Some(data) => {
+            let dir = crate::config::atri_dir().join("tmp");
+            let path = write_speak_audio(&dir, data, payload.audio_format.as_deref())
+                .map_err(ApiResponse::error)?;
+            Some(path.to_string_lossy().into_owned())
+        }
+        None => payload.audio_url.clone(),
+    };
+
+    let event = SpeakEvent {
+        text: payload.text.clone(),
+        audio_url,
+        expression: payload.expression,
+    };
+    app.emit("api:speak", &event)
         .map_err(|e| ApiResponse::error(format!("emit failed: {e}")))?;
     Ok(ApiResponse::success("speak event emitted"))
 }
@@ -270,6 +326,60 @@ pub fn create_router(app_handle: AppHandle) -> Router {
         .route("/model/{*path}", get(model_handler))
         .layer(CorsLayer::permissive())
         .with_state(app_handle)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::write_speak_audio;
+    use base64::Engine;
+
+    fn test_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("atri-speak-test-{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn writes_decoded_audio_with_default_mp3_ext() {
+        let dir = test_dir("default");
+        let data = base64::engine::general_purpose::STANDARD.encode(b"fake-mp3-bytes");
+        let path = write_speak_audio(&dir, &data, None).unwrap();
+        assert_eq!(path, dir.join("speak.mp3"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"fake-mp3-bytes");
+    }
+
+    #[test]
+    fn respects_audio_format_and_overwrites() {
+        let dir = test_dir("wav");
+        let first = base64::engine::general_purpose::STANDARD.encode(b"first");
+        let second = base64::engine::general_purpose::STANDARD.encode(b"second");
+        write_speak_audio(&dir, &first, Some("wav")).unwrap();
+        let path = write_speak_audio(&dir, &second, Some("wav")).unwrap();
+        assert_eq!(path, dir.join("speak.wav"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"second");
+    }
+
+    #[test]
+    fn tolerates_line_wrapped_base64() {
+        let dir = test_dir("wrapped");
+        let data = base64::engine::general_purpose::STANDARD.encode(vec![0u8; 100]);
+        let wrapped: String = data
+            .as_bytes()
+            .chunks(20)
+            .map(|c| std::str::from_utf8(c).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let path = write_speak_audio(&dir, &wrapped, None).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), vec![0u8; 100]);
+    }
+
+    #[test]
+    fn rejects_unknown_format_and_bad_base64() {
+        let dir = test_dir("errors");
+        let data = base64::engine::general_purpose::STANDARD.encode(b"x");
+        assert!(write_speak_audio(&dir, &data, Some("exe")).is_err());
+        assert!(write_speak_audio(&dir, "not-base64!!!", None).is_err());
+    }
 }
 
 pub async fn start_server(app_handle: AppHandle, config: AtriConfig) {

@@ -212,6 +212,7 @@ name = "atri-live2d"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "dirs",
  "serde",
  "serde_json",
