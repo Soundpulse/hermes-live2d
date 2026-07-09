@@ -24,31 +24,43 @@ let currentModel: any = null;
 
 const EXPRESSION_NAMES: Record<string, number> = {
   "exp1": 0, "exp2": 1, "exp3": 2, "exp4": 3,
-  "exp5": 4, "exp6": 5, "exp7": 6,
+  "exp5": 4, "exp6": 5, "exp7": 6, "exp8": 7,
+  "exp9": 8, "exp10": 9, "exp11": 10, "exp12": 11,
 };
+
+// Fraction of the window the model is allowed to fill (lower = smaller).
+const MODEL_FIT = 0.7;
+// Vertical center as a fraction of window height (lower = higher up).
+const MODEL_VERTICAL = 0.32;
+// Horizontal center as a fraction of window width (0.5 = centered, lower = left).
+const MODEL_HORIZONTAL = 0.3;
+// Value that flips the model's watermark keyform to hidden (try 0 if 1 doesn't hide it).
+const WATERMARK_HIDE_VALUE = 1;
 
 function repositionModel(model: any) {
   const w = app.screen.width;
   const h = app.screen.height;
-  // Model-agnostic fit: scale by the model's own canvas height and center it.
-  const modelH =
-    model.internalModel?.originalHeight || model.height / (model.scale.y || 1);
-  const scale = (h * 0.9) / modelH;
+  // Contain-fit using the model's authored canvas size in PIXELS
+  // (internalModel.originalWidth/Height), so wide models don't overflow.
+  const im = model.internalModel;
+  const mw = im?.originalWidth || 1024;
+  const mh = im?.originalHeight || 1024;
+  const scale = Math.min(w / mw, h / mh) * MODEL_FIT;
   model.scale.set(scale);
-  // Centered within the window; on-screen placement is controlled by the
-  // Tauri window position (see tauri.conf.json), not the model position.
-  model.x = w / 2;
-  model.y = h / 2;
+  // Placement on the physical screen is the Tauri window position
+  // (tauri.conf.json); this positions the model within that window.
+  model.x = w * MODEL_HORIZONTAL;
+  model.y = h * MODEL_VERTICAL;
 }
 
 async function loadModel() {
   try {
     // Try loading from ~/.atri/model/ via API server, fall back to bundled
-    let modelUrl = "./model/Murasame.model3.json";
+    let modelUrl = "./model/Sparkle.model3.json";
     try {
-      const resp = await fetch("http://127.0.0.1:3210/model/Murasame.model3.json", { method: "HEAD" });
+      const resp = await fetch("http://127.0.0.1:3210/model/Sparkle.model3.json", { method: "HEAD" });
       if (resp.ok) {
-        modelUrl = "http://127.0.0.1:3210/model/Murasame.model3.json";
+        modelUrl = "http://127.0.0.1:3210/model/Sparkle.model3.json";
         console.log("Loading model from ~/.atri/model/");
       }
     } catch {
@@ -132,6 +144,12 @@ app.ticker.add(() => {
   coreModel.setParameterValueById("ParamEyeBallX", focusX);
   coreModel.setParameterValueById("ParamEyeBallY", focusY);
   coreModel.setParameterValueById("ParamBodyAngleX", focusX * 10);
+
+  // Hide the artist watermark via the model's built-in toggle param(s).
+  // WATERMARK_HIDE_VALUE flips the "水印" keyform to its hidden state.
+  for (const id of ["key12", "Param45", "Param48", "Param49", "Param50"]) {
+    coreModel.setParameterValueById(id, WATERMARK_HIDE_VALUE);
+  }
 });
 
 // --- Expression & Motion event handlers ---
