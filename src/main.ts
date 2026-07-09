@@ -36,6 +36,12 @@ const MODEL_VERTICAL = 0.32;
 const MODEL_HORIZONTAL = 0.3;
 // Value that flips the model's watermark keyform to hidden (try 0 if 1 doesn't hide it).
 const WATERMARK_HIDE_VALUE = 1;
+// Gap (px) between the speech bubble's tail and the model's head.
+const BUBBLE_GAP = 10;
+// Nudge the tail anchor down from the model's top edge, as a fraction of the
+// model's rendered height, to land on the visible head rather than the
+// transparent padding above it (higher = lower on the head).
+const BUBBLE_HEAD_INSET = 0.3;
 
 function repositionModel(model: any) {
   const w = app.screen.width;
@@ -78,6 +84,7 @@ async function loadModel() {
 
     window.addEventListener("resize", () => {
       if (currentModel) repositionModel(currentModel);
+      if (!bubbleEl.classList.contains("hidden")) positionBubble();
     });
   } catch (e: any) {
     console.error("Failed to load model:", e);
@@ -175,10 +182,22 @@ const bubbleText = document.getElementById("bubble-text")!;
 let bubbleTimer: number | null = null;
 let typewriterTimer: number | null = null;
 
+// Anchor the bubble's tail just above the model's head and let the box grow
+// upward, so it stays glued to the head no matter how short the model is or
+// how many lines the text wraps to.
+function positionBubble() {
+  if (!currentModel) return;
+  const headTop = currentModel.y - currentModel.height / 2;
+  const anchorY = headTop + currentModel.height * BUBBLE_HEAD_INSET;
+  bubbleEl.style.top = "auto";
+  bubbleEl.style.bottom = `${window.innerHeight - anchorY + BUBBLE_GAP}px`;
+}
+
 function showBubble(text: string, duration: number = 5000) {
   if (bubbleTimer) clearTimeout(bubbleTimer);
   if (typewriterTimer) clearInterval(typewriterTimer);
   bubbleText.textContent = "";
+  positionBubble();
   bubbleEl.classList.remove("hidden");
   let i = 0;
   typewriterTimer = window.setInterval(() => {
