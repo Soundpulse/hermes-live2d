@@ -160,13 +160,46 @@ app.ticker.add(() => {
 });
 
 // --- Expression & Motion event handlers ---
+
+// How long a triggered expression is held before it fades back to neutral (ms).
+const EXPRESSION_HOLD_MS = 4000;
+let expressionResetTimer: number | null = null;
+
+// Fade the current expression back to the model's neutral (default) face.
+function resetExpression() {
+  if (expressionResetTimer !== null) {
+    clearTimeout(expressionResetTimer);
+    expressionResetTimer = null;
+  }
+  const em = (currentModel as any)?.internalModel?.motionManager?.expressionManager;
+  em?.resetExpression();
+}
+
+// Apply an expression by index, then auto-revert to neutral after `holdMs`.
+// Pass holdMs = null to hold it open until something else clears it (used by
+// speak, which reverts when the audio finishes).
+function playExpression(index: number, holdMs: number | null = EXPRESSION_HOLD_MS) {
+  if (!currentModel) return;
+  if (expressionResetTimer !== null) {
+    clearTimeout(expressionResetTimer);
+    expressionResetTimer = null;
+  }
+  currentModel.expression(index);
+  if (holdMs !== null) {
+    expressionResetTimer = window.setTimeout(() => {
+      expressionResetTimer = null;
+      resetExpression();
+    }, holdMs);
+  }
+}
+
 listen("api:expression", (event: any) => {
   if (!currentModel) return;
   const { id, name } = event.payload;
   if (id !== undefined) {
-    currentModel.expression(id - 1); // API uses 1-based
+    playExpression(id - 1); // API uses 1-based
   } else if (name && name in EXPRESSION_NAMES) {
-    currentModel.expression(EXPRESSION_NAMES[name]);
+    playExpression(EXPRESSION_NAMES[name]);
   }
 });
 
@@ -342,19 +375,19 @@ listen("api:speak", (event: any) => {
   if (!currentModel) return;
   const { text, audio_url, expression } = event.payload;
 
-  // Set expression if provided
-  if (expression !== undefined) {
-    currentModel.expression(expression - 1);
-  }
-
   if (audio_url) {
+    // Hold the expression for the whole utterance, revert when audio ends.
+    if (expression !== undefined) playExpression(expression - 1, null);
     // Show bubble, play audio with lip sync, hide bubble when done
     showBubble(text, 999999);
     startLipsync(audio_url, () => {
       hideBubble();
+      if (expression !== undefined) resetExpression();
     });
   } else {
-    // No audio: just show bubble with calculated duration
-    showBubble(text, Math.max(text.length * 150, 3000));
+    // No audio: hold the expression for the bubble's lifetime.
+    const duration = Math.max(text.length * 150, 3000);
+    if (expression !== undefined) playExpression(expression - 1, duration);
+    showBubble(text, duration);
   }
 });
