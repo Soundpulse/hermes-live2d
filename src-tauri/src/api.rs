@@ -109,6 +109,11 @@ fn expression_list() -> Vec<ExpressionInfo> {
         (5, "exp5"),
         (6, "exp6"),
         (7, "exp7"),
+        (8, "exp8"),
+        (9, "exp9"),
+        (10, "exp10"),
+        (11, "exp11"),
+        (12, "exp12"),
     ];
     entries
         .into_iter()
