@@ -14,34 +14,41 @@ const app = new PIXI.Application({
   backgroundAlpha: 0,
   resizeTo: window,
   antialias: true,
+  // Render at the display's native pixel density (Retina) so the model
+  // isn't drawn at 1x and upscaled — this is what makes it look soft.
+  resolution: window.devicePixelRatio || 1,
+  autoDensity: true,
 });
 
 let currentModel: any = null;
 
 const EXPRESSION_NAMES: Record<string, number> = {
-  "害羞": 0, "失去高光": 1, "吊带睡衣": 2, "内衣": 3,
-  "穿凉鞋": 4, "穿皮鞋": 5, "愣住": 6, "白框": 7,
-  "染血": 8, "小鸟": 9, "螃蟹": 10, "NO": 11,
-  "YES": 12, "睡衣2": 13, "阴影": 14,
+  "exp1": 0, "exp2": 1, "exp3": 2, "exp4": 3,
+  "exp5": 4, "exp6": 5, "exp7": 6,
 };
 
 function repositionModel(model: any) {
   const w = app.screen.width;
   const h = app.screen.height;
-  const scale = h / 2048 * 0.8;
+  // Model-agnostic fit: scale by the model's own canvas height and center it.
+  const modelH =
+    model.internalModel?.originalHeight || model.height / (model.scale.y || 1);
+  const scale = (h * 0.9) / modelH;
   model.scale.set(scale);
-  model.x = (w / 2) - (1220 * scale);
-  model.y = (h / 2) - (950 * scale);
+  // Centered within the window; on-screen placement is controlled by the
+  // Tauri window position (see tauri.conf.json), not the model position.
+  model.x = w / 2;
+  model.y = h / 2;
 }
 
 async function loadModel() {
   try {
     // Try loading from ~/.atri/model/ via API server, fall back to bundled
-    let modelUrl = "./model/atri_8.model3.json";
+    let modelUrl = "./model/Murasame.model3.json";
     try {
-      const resp = await fetch("http://127.0.0.1:3210/model/atri_8.model3.json", { method: "HEAD" });
+      const resp = await fetch("http://127.0.0.1:3210/model/Murasame.model3.json", { method: "HEAD" });
       if (resp.ok) {
-        modelUrl = "http://127.0.0.1:3210/model/atri_8.model3.json";
+        modelUrl = "http://127.0.0.1:3210/model/Murasame.model3.json";
         console.log("Loading model from ~/.atri/model/");
       }
     } catch {
@@ -53,6 +60,7 @@ async function loadModel() {
     });
 
     currentModel = model;
+    model.anchor.set(0.5, 0.5);
     app.stage.addChild(model);
     repositionModel(model);
 
