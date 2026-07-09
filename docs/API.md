@@ -137,11 +137,14 @@ curl -X POST http://127.0.0.1:3210/motion \
 |------|------|------|------|
 | `text` | string | 否 | 气泡显示的文字 |
 | `audio_url` | string | 否 | 音频文件路径（支持 `file:///` 绝对路径或 HTTP URL） |
+| `audio_data` | string | 否 | base64 编码的音频数据（供远程调用方直接上传音频，无需共享文件系统） |
+| `audio_format` | string | 否 | `audio_data` 的格式：`mp3`（默认）/ `wav` / `ogg` / `flac` |
 | `expression` | number | 否 | 表情 ID（1-19） |
 
 **行为:**
-- 有 `audio_url` 时：气泡持续到音频播完自动消失，同时口型随音量同步
-- 无 `audio_url` 时：气泡按文字长度自动计算显示时间（最少 3 秒）
+- 有音频（`audio_url` 或 `audio_data`）时：气泡持续到音频播完自动消失，同时口型随音量同步
+- `audio_data` 优先于 `audio_url`：解码后写入 `~/.atri/tmp/speak.<格式>`（每次调用覆盖，即用即弃）
+- 无音频时：气泡按文字长度自动计算显示时间（最少 3 秒）
 
 **请求示例:**
 ```bash
@@ -154,11 +157,23 @@ curl -X POST http://127.0.0.1:3210/speak \
     "expression": 1
   }'
 
+# 远程上传音频（base64）— 适用于调用方与桌宠不在同一台机器（如 hermes agent）
+curl -X POST http://127.0.0.1:3210/speak \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"text\": \"高性能ですから！\",
+    \"audio_data\": \"$(base64 -i /path/to/audio.mp3)\",
+    \"audio_format\": \"mp3\",
+    \"expression\": 13
+  }"
+
 # 只显示文字+表情（无音频）
 curl -X POST http://127.0.0.1:3210/speak \
   -H 'Content-Type: application/json' \
   -d '{"text": "高性能ですから！", "expression": 13}'
 ```
+
+> 远程集成示例（hermes agent skill）见 [`examples/hermes-skill/`](../examples/hermes-skill/atri-live2d-voice/SKILL.md)。
 
 ---
 

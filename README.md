@@ -40,6 +40,12 @@ ATRI 的 GPT-SoVITS 语音模型托管在 HuggingFace：
 1. 生成 ATRI 风格的日语语音（GPT-SoVITS）
 2. 驱动 Live2D 桌宠说话（表情 + 气泡 + 口型同步）
 
+## Hermes Agent 集成
+
+`examples/hermes-skill/atri-live2d-voice/` 提供了一个 [Hermes Agent](https://github.com/NousResearch/hermes-agent) Skill：
+运行在远程主机（如 EC2）的 hermes 每次生成 TTS 语音后，通过 Tailscale 将录音以 base64 上传到 `/speak`，
+桌宠本地播放并同步口型。详见该目录下的 `SKILL.md`（含 Mac 端 `tailscale serve` 配置步骤）。
+
 ## API 速览
 
 桌宠启动后，HTTP API 默认监听 `http://127.0.0.1:3210`。
