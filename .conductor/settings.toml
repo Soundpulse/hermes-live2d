@@ -1,0 +1,22 @@
+#:schema https://conductor.build/schemas/settings.repo.schema.json
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+[scripts]
+# Install JS deps for the workspace (Rust crates are fetched on first `tauri dev`/`build`).
+setup = "npm install"
+# Free the multi-GB Rust build artifacts before the workspace is archived (source is untouched).
+archive = "cargo clean --manifest-path src-tauri/Cargo.toml || true"
+# The Tauri dev server binds a fixed Vite port (1420) and the app's HTTP API binds a fixed
+# port (3210), neither of which is configurable, so only one workspace can run at a time.
+run_mode = "nonconcurrent"
+
+# Launch the full desktop pet: Rust/Tauri shell + Vite frontend + local HTTP API.
+[scripts.run.dev]
+command = "npm run tauri dev"
+default = true
+icon = "monitor"
+
+# Frontend-only Vite dev server (Live2D/UI work without rebuilding the Rust shell).
+[scripts.run.web]
+command = "npm run dev"
+icon = "globe"
