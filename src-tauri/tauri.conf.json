@@ -15,10 +15,10 @@
       {
         "label": "main",
         "title": "火花",
-        "width": 500,
+        "width": 620,
         "height": 900,
-        "x": 45,
-        "y": 500,
+        "x": -15,
+        "y": 550,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,

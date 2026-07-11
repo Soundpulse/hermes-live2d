@@ -29,7 +29,7 @@ const EXPRESSION_NAMES: Record<string, number> = {
 };
 
 // Fraction of the window the model is allowed to fill (lower = smaller).
-const MODEL_FIT = 0.7;
+const MODEL_FIT = 0.6;
 // Vertical center as a fraction of window height (lower = higher up).
 const MODEL_VERTICAL = 0.32;
 // Horizontal center as a fraction of window width (0.5 = centered, lower = left).
@@ -42,6 +42,13 @@ const BUBBLE_GAP = 10;
 // model's rendered height, to land on the visible head rather than the
 // transparent padding above it (higher = lower on the head).
 const BUBBLE_HEAD_INSET = 0.3;
+// The "0v0" face (exp6) is just a keyform toggle on key6. We apply it directly
+// each frame while hovering rather than via the expression manager, which
+// doesn't hold reliably — this mirrors how the watermark is hidden below.
+const HOVER_EXPRESSION_PARAMS: Record<string, number> = { key6: 1, key3: 0, key5: 0 };
+// How much of the model's bounding box counts as "hovered" (1 = full box
+// incl. transparent padding, lower = tighter to her body).
+const HOVER_HITBOX = 0.7;
 
 function repositionModel(model: any) {
   const w = app.screen.width;
@@ -106,6 +113,11 @@ listen<boolean>("lock-changed", (event) => {
 
 loadModel();
 
+// Hover state, driven by the cursor poll below (the window is click-through,
+// so DOM hover/mouseenter never fire — we test the global cursor position
+// against the model's bounds instead).
+let isHovering = false;
+
 // --- Mouse tracking: model looks toward cursor ---
 let focusTargetX = 0;
 let focusTargetY = 0;
@@ -131,6 +143,29 @@ setInterval(async () => {
     const refDist = 300;
     focusTargetX = Math.max(-1, Math.min(1, dx / refDist));
     focusTargetY = Math.max(-1, Math.min(1, -dy / refDist));
+
+    // Hover: is the cursor over her? Shrink the bounds toward center so we
+    // react to her body, not the transparent canvas padding. (anchor is 0.5,
+    // so currentModel.x/y is the center.)
+    const halfW = (currentModel.width / 2) * HOVER_HITBOX;
+    const halfH = (currentModel.height / 2) * HOVER_HITBOX;
+    const over =
+      cx >= currentModel.x - halfW && cx <= currentModel.x + halfW &&
+      cy >= currentModel.y - halfH && cy <= currentModel.y + halfH;
+    if (over !== isHovering) {
+      isHovering = over;
+      canvas.classList.toggle("hovered", over);
+      // On hover-off, reset the keyforms to neutral once. Live2D params persist
+      // frame-to-frame, so a single write sticks (the ticker stops driving them).
+      if (!over) {
+        const coreModel = (currentModel as any).internalModel?.coreModel;
+        if (coreModel) {
+          for (const id in HOVER_EXPRESSION_PARAMS) {
+            coreModel.setParameterValueById(id, 0);
+          }
+        }
+      }
+    }
   } catch {
     // cursor position unavailable
   }
@@ -156,6 +191,14 @@ app.ticker.add(() => {
   // WATERMARK_HIDE_VALUE flips the "水印" keyform to its hidden state.
   for (const id of ["key12", "Param45", "Param48", "Param49", "Param50"]) {
     coreModel.setParameterValueById(id, WATERMARK_HIDE_VALUE);
+  }
+
+  // While hovering, hold the "0v0" face by driving its keyform params directly
+  // (unless she's mid-utterance, so speak expressions win).
+  if (isHovering && !lipsyncActive) {
+    for (const id in HOVER_EXPRESSION_PARAMS) {
+      coreModel.setParameterValueById(id, HOVER_EXPRESSION_PARAMS[id]);
+    }
   }
 });
 
