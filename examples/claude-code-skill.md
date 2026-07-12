@@ -1,104 +1,90 @@
 ---
 name: atri-voice
 description: |
-  ATRI 语音合成 + Live2D 桌宠联动 Skill 示例。
-  每次回复后自动触发：生成日语语音 → 驱动 Live2D 桌宠说话（含表情和气泡文字）。
+  Example Skill wiring TTS speech synthesis to a Live2D desktop pet.
+  After each reply, it automatically: generates Japanese speech → drives the Live2D desktop pet to talk (with an expression and a speech bubble).
 ---
 
-# ATRI Voice + Live2D Skill 示例
+# ATRI Voice + Live2D Skill Example
 
-> 这是一个 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 自定义 Skill 的参考范例，
-> 展示如何将 TTS 语音合成与 ATRI Live2D 桌宠联动。
+> This is a reference example of a custom [Claude Code](https://docs.anthropic.com/en/docs/claude-code) Skill,
+> showing how to wire TTS speech synthesis to the ATRI Live2D desktop pet.
 >
-> **你需要自行准备 TTS 服务**（如 GPT-SoVITS、VITS、Edge-TTS 等），
-> 本示例仅约定接口协议，不包含 TTS 实现。
+> **You need to bring your own TTS service** (e.g. GPT-SoVITS, VITS, Edge-TTS).
+> This example only defines the interface contract; it does not include a TTS implementation.
 
-## 前置条件
+## Prerequisites
 
-需要两个服务运行中：
+Two services must be running:
 
-| 服务 | 用途 | 健康检查 |
-|------|------|----------|
-| TTS 服务 | 语音合成，输出 `.wav`/`.ogg` 文件 | 自行实现 |
-| Live2D API | 桌宠控制（本项目提供） | `curl -s http://127.0.0.1:3210/status` |
+| Service | Purpose | Health check |
+|---------|---------|--------------|
+| TTS service | Speech synthesis, outputs `.wav`/`.ogg` files | Bring your own |
+| Live2D API | Desktop pet control (provided by this project) | `curl -s http://127.0.0.1:3210/status` |
 
-### TTS 服务要求
+### TTS service requirements
 
-你的 TTS 服务只需满足一个条件：**能生成音频文件到本地路径**。
+Your TTS service only needs to satisfy one condition: **it can generate an audio file to a local path.**
 
-推荐方案：
-- [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) — 高质量克隆语音，ATRI 模型见 [VoidShine/atri-sovits](https://huggingface.co/VoidShine/atri-sovits)
-- [Edge-TTS](https://github.com/rany2/edge-tts) — 零配置，多语言
-- 任何能通过命令行生成音频文件的 TTS 工具
+Recommended options:
+- [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) — high-quality voice cloning; for an ATRI model see [VoidShine/atri-sovits](https://huggingface.co/VoidShine/atri-sovits)
+- [Edge-TTS](https://github.com/rany2/edge-tts) — zero config, multilingual
+- Any TTS tool that can generate an audio file from the command line
 
-## 回复后流程
+## After-reply flow
 
-每条有实质内容的回复结束后，执行以下 2 步：
+After every reply with substantive content, run the following 2 steps:
 
-### Step 1: 生成语音
+### Step 1: Generate speech
 
-调用你自己的 TTS 服务，将回复内容概括为 1-2 句日语，生成音频文件。
+Call your own TTS service to condense the reply into 1-2 Japanese sentences and generate an audio file.
 
 ```bash
-# 示例：用你的 TTS 工具生成音频（请替换为你的实际命令）
-your-tts-command --text "日语文本" --output /tmp/atri_reply.wav
+# Example: generate audio with your TTS tool (replace with your actual command)
+your-tts-command --text "Japanese text" --output /tmp/atri_reply.wav
 ```
 
-语音文本要求：
-- 1-2 句日语，不超过 50 字
-- 用 ATRI 的方式**概括**回复内容（不是逐字翻译）
-- 融入 ATRI 语气词：ですから、ムフン、はいです 等
+Speech text requirements:
+- 1-2 Japanese sentences, no more than 50 characters
+- **Summarize** the reply in ATRI's voice (not a word-for-word translation)
+- Weave in ATRI's verbal tics: ですから, ムフン, はいです, etc.
 
-### Step 2: 驱动 Live2D 桌宠
+### Step 2: Drive the Live2D desktop pet
 
-调用 `/speak` 接口，一次完成气泡文字 + 表情 + 口型同步：
+Call the `/speak` endpoint to handle the speech bubble text, expression, and lip sync in one shot:
 
 ```bash
 curl -s -X POST http://127.0.0.1:3210/speak \
   -H 'Content-Type: application/json' \
   -d '{
-    "text": "简短中文概括",
+    "text": "Short summary",
     "audio_url": "file:///tmp/atri_reply.wav",
-    "expression": <表情ID>
+    "expression": <expression ID>
   }'
 ```
 
-- `text` — 气泡显示的中文文字（10-25 字，ATRI 口吻）
-- `audio_url` — Step 1 生成的音频文件路径（`file://` 前缀 + 绝对路径）
-- `expression` — 表情 ID（见下表）
+- `text` — the text shown in the speech bubble (10-25 characters, in ATRI's voice)
+- `audio_url` — path to the audio file generated in Step 1 (`file://` prefix + absolute path)
+- `expression` — expression ID (see below)
 
-## 表情选择指南
+## Choosing an expression
 
-根据回复内容的情感基调选择：
+The model exposes 12 expressions, addressable via `expression: 1`–`12` (internally `exp1`–`exp12`).
+The `expression` field is 1-based, so valid values are `1` through `12`.
 
-| 场景 | 表情 | ID |
-|------|------|----|
-| 得意、自信、完成任务 | YES | 13 |
-| 害羞、被夸 | 害羞 | 1 |
-| 惊讶、愣住 | 愣住 | 7 |
-| 严肃、认真分析 | 阴影 | 15 |
-| 否定、拒绝、生气 | NO | 12 |
-| 伤感、遗憾 | 失去高光 | 2 |
-| 开心、日常对话 | 小鸟 | 10 |
-| 提到螃蟹/食物 | 螃蟹 | 11 |
-| 默认/中性 | _(不传 expression)_ | — |
+Their emotional meaning is model-specific and not labeled, so pick one by trying each and seeing what fits.
+Omit `expression` entirely for a neutral face.
 
-### 受限表情（仅在用户明确要求时使用）
+## Skip conditions
 
-以下表情会改变服装：
+Do not trigger the voice flow in these cases:
+- Heartbeat / empty replies
+- One-line confirmations of pure config operations (e.g. "done")
 
-- 3 = 吊带睡衣、4 = 内衣、5 = 穿凉鞋、6 = 穿皮鞋、9 = 染血、14 = 睡衣2
+## Fallback strategy
 
-## 跳过条件
-
-以下场景不触发语音流程：
-- 心跳/空回复
-- 纯配置操作的一句话确认（如 "done"）
-
-## 降级策略
-
-| 故障 | 行为 |
-|------|------|
-| TTS 不可用 | 跳过语音和 Live2D，仅文字回复 |
-| Live2D 不可用 | 照常生成语音，跳过 /speak 调用 |
-| 两者都不可用 | 纯文字回复，不报错 |
+| Failure | Behavior |
+|---------|----------|
+| TTS unavailable | Skip speech and Live2D; reply with text only |
+| Live2D unavailable | Generate speech as usual; skip the /speak call |
+| Both unavailable | Text-only reply, no error |
