@@ -14,11 +14,11 @@
     "windows": [
       {
         "label": "main",
-        "title": "ATRI",
-        "width": 500,
+        "title": "火花",
+        "width": 620,
         "height": 900,
-        "x": 1100,
-        "y": 500,
+        "x": -15,
+        "y": 550,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,

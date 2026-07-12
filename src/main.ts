@@ -14,34 +14,66 @@ const app = new PIXI.Application({
   backgroundAlpha: 0,
   resizeTo: window,
   antialias: true,
+  // Render at the display's native pixel density (Retina) so the model
+  // isn't drawn at 1x and upscaled — this is what makes it look soft.
+  resolution: window.devicePixelRatio || 1,
+  autoDensity: true,
 });
 
 let currentModel: any = null;
 
 const EXPRESSION_NAMES: Record<string, number> = {
-  "害羞": 0, "失去高光": 1, "吊带睡衣": 2, "内衣": 3,
-  "穿凉鞋": 4, "穿皮鞋": 5, "愣住": 6, "白框": 7,
-  "染血": 8, "小鸟": 9, "螃蟹": 10, "NO": 11,
-  "YES": 12, "睡衣2": 13, "阴影": 14,
+  "exp1": 0, "exp2": 1, "exp3": 2, "exp4": 3,
+  "exp5": 4, "exp6": 5, "exp7": 6, "exp8": 7,
+  "exp9": 8, "exp10": 9, "exp11": 10, "exp12": 11,
 };
+
+// Fraction of the window the model is allowed to fill (lower = smaller).
+const MODEL_FIT = 0.6;
+// Vertical center as a fraction of window height (lower = higher up).
+const MODEL_VERTICAL = 0.32;
+// Horizontal center as a fraction of window width (0.5 = centered, lower = left).
+const MODEL_HORIZONTAL = 0.3;
+// Value that flips the model's watermark keyform to hidden (try 0 if 1 doesn't hide it).
+const WATERMARK_HIDE_VALUE = 1;
+// Gap (px) between the speech bubble's tail and the model's head.
+const BUBBLE_GAP = 10;
+// Nudge the tail anchor down from the model's top edge, as a fraction of the
+// model's rendered height, to land on the visible head rather than the
+// transparent padding above it (higher = lower on the head).
+const BUBBLE_HEAD_INSET = 0.3;
+// The "0v0" face (exp6) is just a keyform toggle on key6. We apply it directly
+// each frame while hovering rather than via the expression manager, which
+// doesn't hold reliably — this mirrors how the watermark is hidden below.
+const HOVER_EXPRESSION_PARAMS: Record<string, number> = { key6: 1, key3: 0, key5: 0 };
+// How much of the model's bounding box counts as "hovered" (1 = full box
+// incl. transparent padding, lower = tighter to her body).
+const HOVER_HITBOX = 0.7;
 
 function repositionModel(model: any) {
   const w = app.screen.width;
   const h = app.screen.height;
-  const scale = h / 2048 * 0.8;
+  // Contain-fit using the model's authored canvas size in PIXELS
+  // (internalModel.originalWidth/Height), so wide models don't overflow.
+  const im = model.internalModel;
+  const mw = im?.originalWidth || 1024;
+  const mh = im?.originalHeight || 1024;
+  const scale = Math.min(w / mw, h / mh) * MODEL_FIT;
   model.scale.set(scale);
-  model.x = (w / 2) - (1220 * scale);
-  model.y = (h / 2) - (950 * scale);
+  // Placement on the physical screen is the Tauri window position
+  // (tauri.conf.json); this positions the model within that window.
+  model.x = w * MODEL_HORIZONTAL;
+  model.y = h * MODEL_VERTICAL;
 }
 
 async function loadModel() {
   try {
     // Try loading from ~/.atri/model/ via API server, fall back to bundled
-    let modelUrl = "./model/atri_8.model3.json";
+    let modelUrl = "./model/Sparkle.model3.json";
     try {
-      const resp = await fetch("http://127.0.0.1:3210/model/atri_8.model3.json", { method: "HEAD" });
+      const resp = await fetch("http://127.0.0.1:3210/model/Sparkle.model3.json", { method: "HEAD" });
       if (resp.ok) {
-        modelUrl = "http://127.0.0.1:3210/model/atri_8.model3.json";
+        modelUrl = "http://127.0.0.1:3210/model/Sparkle.model3.json";
         console.log("Loading model from ~/.atri/model/");
       }
     } catch {
@@ -53,11 +85,13 @@ async function loadModel() {
     });
 
     currentModel = model;
+    model.anchor.set(0.5, 0.5);
     app.stage.addChild(model);
     repositionModel(model);
 
     window.addEventListener("resize", () => {
       if (currentModel) repositionModel(currentModel);
+      if (!bubbleEl.classList.contains("hidden")) positionBubble();
     });
   } catch (e: any) {
     console.error("Failed to load model:", e);
@@ -78,6 +112,11 @@ listen<boolean>("lock-changed", (event) => {
 });
 
 loadModel();
+
+// Hover state, driven by the cursor poll below (the window is click-through,
+// so DOM hover/mouseenter never fire — we test the global cursor position
+// against the model's bounds instead).
+let isHovering = false;
 
 // --- Mouse tracking: model looks toward cursor ---
 let focusTargetX = 0;
@@ -104,6 +143,29 @@ setInterval(async () => {
     const refDist = 300;
     focusTargetX = Math.max(-1, Math.min(1, dx / refDist));
     focusTargetY = Math.max(-1, Math.min(1, -dy / refDist));
+
+    // Hover: is the cursor over her? Shrink the bounds toward center so we
+    // react to her body, not the transparent canvas padding. (anchor is 0.5,
+    // so currentModel.x/y is the center.)
+    const halfW = (currentModel.width / 2) * HOVER_HITBOX;
+    const halfH = (currentModel.height / 2) * HOVER_HITBOX;
+    const over =
+      cx >= currentModel.x - halfW && cx <= currentModel.x + halfW &&
+      cy >= currentModel.y - halfH && cy <= currentModel.y + halfH;
+    if (over !== isHovering) {
+      isHovering = over;
+      canvas.classList.toggle("hovered", over);
+      // On hover-off, reset the keyforms to neutral once. Live2D params persist
+      // frame-to-frame, so a single write sticks (the ticker stops driving them).
+      if (!over) {
+        const coreModel = (currentModel as any).internalModel?.coreModel;
+        if (coreModel) {
+          for (const id in HOVER_EXPRESSION_PARAMS) {
+            coreModel.setParameterValueById(id, 0);
+          }
+        }
+      }
+    }
   } catch {
     // cursor position unavailable
   }
@@ -124,16 +186,63 @@ app.ticker.add(() => {
   coreModel.setParameterValueById("ParamEyeBallX", focusX);
   coreModel.setParameterValueById("ParamEyeBallY", focusY);
   coreModel.setParameterValueById("ParamBodyAngleX", focusX * 10);
+
+  // Hide the artist watermark via the model's built-in toggle param(s).
+  // WATERMARK_HIDE_VALUE flips the "水印" keyform to its hidden state.
+  for (const id of ["key12", "Param45", "Param48", "Param49", "Param50"]) {
+    coreModel.setParameterValueById(id, WATERMARK_HIDE_VALUE);
+  }
+
+  // While hovering, hold the "0v0" face by driving its keyform params directly
+  // (unless she's mid-utterance, so speak expressions win).
+  if (isHovering && !lipsyncActive) {
+    for (const id in HOVER_EXPRESSION_PARAMS) {
+      coreModel.setParameterValueById(id, HOVER_EXPRESSION_PARAMS[id]);
+    }
+  }
 });
 
 // --- Expression & Motion event handlers ---
+
+// How long a triggered expression is held before it fades back to neutral (ms).
+const EXPRESSION_HOLD_MS = 4000;
+let expressionResetTimer: number | null = null;
+
+// Fade the current expression back to the model's neutral (default) face.
+function resetExpression() {
+  if (expressionResetTimer !== null) {
+    clearTimeout(expressionResetTimer);
+    expressionResetTimer = null;
+  }
+  const em = (currentModel as any)?.internalModel?.motionManager?.expressionManager;
+  em?.resetExpression();
+}
+
+// Apply an expression by index, then auto-revert to neutral after `holdMs`.
+// Pass holdMs = null to hold it open until something else clears it (used by
+// speak, which reverts when the audio finishes).
+function playExpression(index: number, holdMs: number | null = EXPRESSION_HOLD_MS) {
+  if (!currentModel) return;
+  if (expressionResetTimer !== null) {
+    clearTimeout(expressionResetTimer);
+    expressionResetTimer = null;
+  }
+  currentModel.expression(index);
+  if (holdMs !== null) {
+    expressionResetTimer = window.setTimeout(() => {
+      expressionResetTimer = null;
+      resetExpression();
+    }, holdMs);
+  }
+}
+
 listen("api:expression", (event: any) => {
   if (!currentModel) return;
   const { id, name } = event.payload;
   if (id !== undefined) {
-    currentModel.expression(id - 1); // API uses 1-based
+    playExpression(id - 1); // API uses 1-based
   } else if (name && name in EXPRESSION_NAMES) {
-    currentModel.expression(EXPRESSION_NAMES[name]);
+    playExpression(EXPRESSION_NAMES[name]);
   }
 });
 
@@ -149,10 +258,22 @@ const bubbleText = document.getElementById("bubble-text")!;
 let bubbleTimer: number | null = null;
 let typewriterTimer: number | null = null;
 
+// Anchor the bubble's tail just above the model's head and let the box grow
+// upward, so it stays glued to the head no matter how short the model is or
+// how many lines the text wraps to.
+function positionBubble() {
+  if (!currentModel) return;
+  const headTop = currentModel.y - currentModel.height / 2;
+  const anchorY = headTop + currentModel.height * BUBBLE_HEAD_INSET;
+  bubbleEl.style.top = "auto";
+  bubbleEl.style.bottom = `${window.innerHeight - anchorY + BUBBLE_GAP}px`;
+}
+
 function showBubble(text: string, duration: number = 5000) {
   if (bubbleTimer) clearTimeout(bubbleTimer);
   if (typewriterTimer) clearInterval(typewriterTimer);
   bubbleText.textContent = "";
+  positionBubble();
   bubbleEl.classList.remove("hidden");
   let i = 0;
   typewriterTimer = window.setInterval(() => {
@@ -297,19 +418,19 @@ listen("api:speak", (event: any) => {
   if (!currentModel) return;
   const { text, audio_url, expression } = event.payload;
 
-  // Set expression if provided
-  if (expression !== undefined) {
-    currentModel.expression(expression - 1);
-  }
-
   if (audio_url) {
+    // Hold the expression for the whole utterance, revert when audio ends.
+    if (expression !== undefined) playExpression(expression - 1, null);
     // Show bubble, play audio with lip sync, hide bubble when done
     showBubble(text, 999999);
     startLipsync(audio_url, () => {
       hideBubble();
+      if (expression !== undefined) resetExpression();
     });
   } else {
-    // No audio: just show bubble with calculated duration
-    showBubble(text, Math.max(text.length * 150, 3000));
+    // No audio: hold the expression for the bubble's lifetime.
+    const duration = Math.max(text.length * 150, 3000);
+    if (expression !== undefined) playExpression(expression - 1, duration);
+    showBubble(text, duration);
   }
 });

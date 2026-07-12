@@ -16,6 +16,14 @@ html, body {
   height: 100%;
   display: block;
   background: transparent;
+  transition: opacity 0.2s ease;
+}
+
+/* Fade the model while the cursor is over her so you can see what she's
+   covering. Toggled from main.ts via cursor polling, because the window is
+   click-through (set_ignore_cursor_events) and never receives DOM hover. */
+#live2d-canvas.hovered {
+  opacity: 0.3;
 }
 
 #drag-overlay {
@@ -34,7 +42,9 @@ html, body {
 
 .bubble {
   position: fixed;
-  top: 3%;
+  /* Vertical position is set dynamically in main.ts (positionBubble) so the
+     tail stays anchored just above the model's head. */
+  bottom: 60%;
   left: 50%;
   transform: translateX(-50%);
   max-width: 75%;
