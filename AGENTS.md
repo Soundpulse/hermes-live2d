@@ -1,6 +1,6 @@
 # AGENTS.md: installing Sparky with an AI agent
 
-This guide is for AI agents (hermes, Claude Code, Codex, ...) installing Sparky for a user.
+This guide is for hermes agents installing Sparky for a user.
 Sparky runs on two machines, so read the split before you start.
 
 | Step | Where | Who does it |

@@ -15,7 +15,6 @@
   <a href="https://github.com/Soundpulse/hermes-live2d/releases">Releases</a> ·
   <a href="docs/API.md">API reference</a> ·
   <a href="skills/hermes-live2d-voice/SKILL.md">Hermes skill</a> ·
-  <a href="examples/claude-code-skill.md">Claude Code skill</a> ·
   <a href="AGENTS.md">Install with an agent</a>
 </p>
 
@@ -195,16 +194,11 @@ Config lives at `~/.sparky/config.json`, created on first launch:
 - Drop a custom Live2D model under `~/.sparky/model/` to load it instead of the bundled Sparky
   model on startup.
 
-The bundled Sparky model is original art, rigged with [psd2live](https://github.com/tsunehimatoi/psd2live):
-a 6-style eye switch (`ParamEyeStyle` 0 to 4 plus `ParamAnger`), top-anchored mouth for lip sync,
-simulated hair, and chest, thigh and pendant physics, packed into a single 2048² texture.
+The bundled Sparky model is original art, rigged with [psd2live](https://github.com/tsunehimatoi/psd2live).
 
-## Other integrations
+## Custom TTS
 
-- **Claude Code** — [`examples/claude-code-skill.md`](examples/claude-code-skill.md) is a
-  TTS-agnostic example skill: generate speech with your own TTS (GPT-SoVITS, Edge-TTS, …) and
-  drive the pet after each reply.
-- **Custom TTS voice (optional)** — any engine that produces a supported audio file can drive
+Any TTS engine that produces a supported audio file can drive
   Sparky; the Hermes path supplies its own TTS audio.
 
 ## Tech stack
