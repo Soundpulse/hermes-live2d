@@ -1,12 +1,12 @@
-# ATRI Live2D — a desktop pet your agent can speak through
+# Sparky: a desktop pet your agent can speak through
 
 <p align="center">
-  <img src="assets/screenshot.png" width="240" alt="ATRI Live2D desktop pet" />
+  <img src="assets/banner.jpg" width="100%" alt="Sparky, the hermes-live2d desktop pet" />
 </p>
 
 <p align="center">
   A transparent Live2D desktop pet (Tauri 2 + pixi-live2d-display) with voice lip sync,
-  expressions, mouse tracking, and a local HTTP API. Currently ships the <b>Sparkle (火花)</b>
+  expressions, mouse tracking, and a local HTTP API. Ships with the <b>Sparky</b>
   model. Point your <a href="https://github.com/NousResearch/hermes-agent">hermes agent</a> at it
   and every voice recording it generates is played on the pet — lip-synced, with a speech bubble.
 </p>
@@ -15,7 +15,7 @@
   <a href="https://github.com/Soundpulse/hermes-live2d/releases">Releases</a> ·
   <a href="docs/API.md">API reference</a> ·
   <a href="skills/hermes-live2d-voice/SKILL.md">Hermes skill</a> ·
-  <a href="examples/claude-code-skill.md">Claude Code skill</a>
+  <a href="AGENTS.md">Install with an agent</a>
 </p>
 
 **Useful for:**
@@ -28,6 +28,9 @@
 
 ## Enable this for your hermes agent
 
+> **Installing with an AI agent?** Point it at [`AGENTS.md`](AGENTS.md). It splits the steps
+> between the agent host and your Mac and ends with a real voice test.
+
 This is the main use case. Your hermes agent runs somewhere (e.g. an EC2 box, chatting over
 the Discord gateway); the pet runs on your Mac. Whenever the agent generates a TTS recording
 with its `text_to_speech` tool, a small skill uploads that audio to the pet, which plays it with
@@ -37,7 +40,7 @@ the agent was already producing get routed.
 ```
 hermes agent (remote)                         your Mac
 ────────────────────                          ────────
-text_to_speech ──► hermes-live2d-voice skill ──► POST /speak ──► Sparkle pet
+text_to_speech ──► hermes-live2d-voice skill ──► POST /speak ──► Sparky pet
                      (speak.sh, base64)          (over Tailscale)   lip sync + bubble
 ```
 
@@ -66,29 +69,17 @@ pnpm tauri build          # release .app / .dmg under src-tauri/target/release/b
 pnpm tauri dev
 ```
 
-**Install the Live2D model.** The model assets are **not** included in this repo (they're
-gitignored) and are not redistributed here — download them and drop them in yourself:
-
-1. Download the free **Spark (火花)** model from
-   [booth.pm/en/items/8265367](https://booth.pm/en/items/8265367) and unzip it.
-2. Place the unzipped model folder so its entry file is named exactly **`Sparkle.model3.json`**
-   (rename the `.model3.json` if the download uses a different name), in one of:
-   - **`~/.atri/model/`** — runtime override, no rebuild needed. Loaded on the next launch and
-     takes priority. Result: `~/.atri/model/Sparkle.model3.json` (plus its `.moc3`, textures,
-     physics, expressions, etc. alongside).
-   - **`public/model/`** — bundled into the app at build time (use this when building from source;
-     required, since the repo ships no model). Result: `public/model/Sparkle.model3.json`.
-
-To use a different Live2D character entirely, put its files in `~/.atri/model/` with the entry
-file renamed to `Sparkle.model3.json` — the filename is what the app looks for. Note its
+The Sparky model is bundled under `public/model/`, so no separate model download is required.
+To use a different Live2D character, put its files in `~/.sparky/model/` with the entry file
+renamed to `Sparky.model3.json` — the filename is what the app looks for. Note its
 expressions/keyforms will differ (see the skill's model-swap note).
 
-Launch the app. On first run it creates `~/.atri/config.json` and starts a local HTTP API on
+Launch the app. On first run it creates `~/.sparky/config.json` and starts a local HTTP API on
 `http://127.0.0.1:3210`. Confirm it's up:
 
 ```bash
 curl http://127.0.0.1:3210/status
-# {"ok":true,"message":"ATRI Live2D API is running"}
+# {"ok":true,"message":"Sparky Live2D API is running"}
 ```
 
 ### 2. Expose the pet to your agent over Tailscale
@@ -108,20 +99,29 @@ devices.
 Copy the bundled skill into your hermes agent's skills directory:
 
 ```bash
-cp -r skills/hermes-live2d-voice /path/to/hermes/skills/
+mkdir -p ~/.hermes/skills/creative
+cp -r skills/hermes-live2d-voice ~/.hermes/skills/creative/
 ```
 
-It's a standard `SKILL.md` + `speak.sh` bundle. Tell the agent's environment where the pet lives:
+It's a standard `SKILL.md` + `speak.sh` bundle. Tell the agent where the pet lives by adding it
+to the hermes env file, so it survives gateway restarts (a shell `export` does not):
 
 ```bash
-export ATRI_SPEAK_URL="https://<mac-name>.<tailnet>.ts.net"
+echo 'SPARKY_SPEAK_URL=https://<mac-name>.<tailnet>.ts.net' >> ~/.hermes/.env
+# Only if the agent host runs Tailscale in userspace mode (common on containers/VPS):
+echo 'SPARKY_SPEAK_PROXY=http://127.0.0.1:1056' >> ~/.hermes/.env
 ```
 
-Verify from the agent host:
+Restart the hermes gateway afterwards; it exports these keys to the skill. `speak.sh` never reads
+the env file itself.
+
+Verify from the agent host, then play a real clip end to end:
 
 ```bash
-curl -s "$ATRI_SPEAK_URL/status"
-# {"ok":true,"message":"ATRI Live2D API is running"}
+curl -s ${SPARKY_SPEAK_PROXY:+--proxy "$SPARKY_SPEAK_PROXY"} "$SPARKY_SPEAK_URL/status"
+# {"ok":true,"message":"Sparky Live2D API is running"}
+bash ~/.hermes/skills/creative/hermes-live2d-voice/speak.sh /path/to/any.mp3 2 "hi!"
+# Sparky should talk with heart eyes.
 ```
 
 That's it. See [`skills/hermes-live2d-voice/SKILL.md`](skills/hermes-live2d-voice/SKILL.md)
@@ -135,11 +135,12 @@ asleep or offline.
 - **Transparent desktop pet** — frameless, transparent, always-on-top; draggable and resizable
 - **Mouse tracking** — eyes and head follow the cursor in real time, across multiple monitors
 - **Voice lip sync** — mouth animation is driven by audio volume during playback
-- **Expressions & motions** — 12 expressions (`exp1`–`exp12`) plus custom motion playback
+- **Expressions & motions** — 6 named expressions plus custom motion playback
 - **Speech bubbles** — typewriter-style bubbles with configurable duration, anchored to the head
 - **HTTP API** — local REST API (default port 3210) for external programs to drive the pet
 - **Window memory** — remembers window position and size across launches
 - **System tray** — tray icon to lock/unlock and quit
+- **Calm idle** — breathing and blinking with subtle sway, so the pet does not fidget
 
 ## HTTP API at a glance
 
@@ -154,10 +155,10 @@ curl -X POST http://127.0.0.1:3210/speak \
   -H 'Content-Type: application/json' \
   -d '{"text": "hello!", "audio_url": "file:///path/to/audio.wav", "expression": 1}'
 
-# Switch expression (id 1–12, or name exp1–exp12)
+# Switch expression (id 1–6, or semantic name)
 curl -X POST http://127.0.0.1:3210/expression \
   -H 'Content-Type: application/json' \
-  -d '{"name": "exp1"}'
+  -d '{"name": "heart"}'
 
 # Show a speech bubble
 curl -X POST http://127.0.0.1:3210/bubble \
@@ -171,16 +172,16 @@ endpoint reference: [docs/API.md](docs/API.md).
 
 ### Expressions
 
-The model exposes **12 expressions**, addressed as `expression: 1`–`12` (names `exp1`–`exp12`, ids
-are 1-based); omit `expression` for the neutral/default face. Each id maps to a specific mood on
-the loaded model — see the mood table in
+The model exposes **6 expressions**, addressed as `expression: 1`–`6` (names `normal`, `heart`,
+`blank`, `angry`, `dizzy`, and `><`; ids are 1-based). Omit `expression` for the neutral/default
+face. See the mood table in
 [`skills/hermes-live2d-voice/SKILL.md`](skills/hermes-live2d-voice/SKILL.md#expression-guide) for
 the current mapping. Query the live id/name list any time with
 `curl http://127.0.0.1:3210/expressions`.
 
 ## Configuration
 
-Config lives at `~/.atri/config.json`, created on first launch:
+Config lives at `~/.sparky/config.json`, created on first launch:
 
 ```json
 {
@@ -188,22 +189,17 @@ Config lives at `~/.atri/config.json`, created on first launch:
 }
 ```
 
-- Window position/size are saved to `~/.atri/window_state.json`.
-- Uploaded `/speak` audio is written to `~/.atri/tmp/` and overwritten on each call.
-- Drop a custom Live2D model under `~/.atri/model/` to load it instead of the bundled Sparkle
+- Window position/size are saved to `~/.sparky/window_state.json`.
+- Uploaded `/speak` audio is written to `~/.sparky/tmp/` and overwritten on each call.
+- Drop a custom Live2D model under `~/.sparky/model/` to load it instead of the bundled Sparky
   model on startup.
 
-The bundled character is the free **Spark (火花)** Live2D model by 夜墨ww
-([booth.pm/en/items/8265367](https://booth.pm/en/items/8265367)) — Sparkle from Honkai: Star Rail.
+The bundled Sparky model is original art, rigged with [psd2live](https://github.com/tsunehimatoi/psd2live).
 
-## Other integrations
+## Custom TTS
 
-- **Claude Code** — [`examples/claude-code-skill.md`](examples/claude-code-skill.md) is a
-  TTS-agnostic example skill: generate speech with your own TTS (GPT-SoVITS, Edge-TTS, …) and
-  drive the pet after each reply.
-- **GPT-SoVITS voice (optional)** — for a Japanese ATRI voice, a GPT-SoVITS model is hosted at
-  [VoidShine/atri-sovits](https://huggingface.co/VoidShine/atri-sovits). Not needed for the hermes
-  path, where the agent supplies its own TTS audio.
+Any TTS engine that produces a supported audio file can drive
+  Sparky; the Hermes path supplies its own TTS audio.
 
 ## Tech stack
 
@@ -223,6 +219,8 @@ The bundled character is the free **Spark (火花)** Live2D model by 夜墨ww
 - **Model-bound parameters** — expression/keyform mappings are hardcoded for the bundled model;
   swapping in a different Live2D model requires code changes.
 - **Volume-driven lip sync** — mouth movement maps from audio volume, not viseme-accurate phonemes.
+- **Security scan** — `skills/hermes-live2d-voice` is scanned with
+  [NVIDIA SkillSpector](https://github.com/NVIDIA/SkillSpector) (`skillspector scan skills/hermes-live2d-voice --no-llm`).
 - **Local, unauthenticated API** — the HTTP API listens on `127.0.0.1` with no auth; only expose
   it to trusted devices (e.g. a private tailnet), never the public internet.
 - **Mouse tracking via Tauri** — `cursor_position()` behavior can vary across macOS versions.
@@ -232,5 +230,5 @@ The bundled character is the free **Spark (火花)** Live2D model by 夜墨ww
 Project code is released under the MIT license.
 
 Use of the Live2D Cubism SDK and the character model assets is subject to their respective
-licenses. The bundled **Spark (火花)** model is by 夜墨ww
+licenses. The bundled **Sparky** model is based on **Spark (火花)** by 夜墨ww
 ([booth.pm/en/items/8265367](https://booth.pm/en/items/8265367)); follow its terms.

@@ -1,25 +1,26 @@
 {
-  "name": "atri-live2d",
+  "name": "sparky-live2d",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "packageManager": "pnpm@10.28.2",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "node --test tests/*.test.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-global-shortcut": "^2.3.1",
-    "@tauri-apps/plugin-opener": "^2",
-    "pixi-live2d-display": "^0.4.0",
-    "pixi.js": "^6.5.10"
+    "@tauri-apps/api": "2.10.1",
+    "@tauri-apps/plugin-global-shortcut": "2.3.1",
+    "@tauri-apps/plugin-opener": "2.5.3",
+    "pixi-live2d-display": "0.4.0",
+    "pixi.js": "6.5.10"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
-    "typescript": "~5.6.2",
-    "vite": "^6.0.3"
+    "@tauri-apps/cli": "2.10.1",
+    "typescript": "5.6.3",
+    "vite": "6.4.4"
   }
 }

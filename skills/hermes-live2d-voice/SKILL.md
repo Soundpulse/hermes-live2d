@@ -1,8 +1,13 @@
 ---
 name: hermes-live2d-voice
-description: "Play generated TTS recordings on the ATRI Live2D desktop pet (lip sync + expression + speech bubble)."
-version: 1.1.0
+description: "Use when generated TTS recordings should play through the Sparky Live2D desktop pet."
+version: 2.0.0
 platforms: [linux, macos]
+allowed-tools: [Bash]
+permissions:
+  network: ["$SPARKY_SPEAK_URL"]
+  env: [SPARKY_SPEAK_URL, SPARKY_SPEAK_PROXY]
+  files: [read: audio file passed as argument]
 metadata:
   hermes:
     tags: [live2d, tts, voice, avatar, desktop-pet, hermes]
@@ -11,7 +16,7 @@ metadata:
 
 # Hermes Live2D Voice
 
-Route every TTS recording you generate to the ATRI Live2D desktop pet, which plays
+Route every TTS recording you generate to the Sparky Live2D desktop pet, which plays
 it with volume-driven lip sync, an optional expression, and a speech bubble.
 
 ## The one rule
@@ -59,14 +64,14 @@ Example:
 ## Expression guide
 
 Pick from the mood mapping below. For neutral speech, **omit the expression argument entirely.**
-IDs are the model's 1-based `/speak` values (`exp1`–`exp12`); the meanings below are specific to
-the currently loaded Live2D model.
+IDs are the model's 1-based `/speak` values; the names and meanings below match the bundled
+Sparky model.
 
 **If the user has swapped the Live2D model, this table is stale — the ids no longer match these
 moods.** Before trusting it, query the live list:
 
 ```bash
-curl "$ATRI_SPEAK_URL/expressions"   # add --proxy "$ATRI_SPEAK_PROXY" if set
+curl "$SPARKY_SPEAK_URL/expressions"   # add --proxy "$SPARKY_SPEAK_PROXY" if set
 ```
 
 If the returned ids/names don't line up with the table (different count, or the model was
@@ -75,16 +80,12 @@ mood → id for the new model before routing real recordings.
 
 | Mood of the recording | Expression | ID |
 |---|---|---|
-| Angry, bratty, fake-mad | Angry | 3 |
-| Love, hearts, affectionate | Love / hearts | 2 |
-| Disgusted or sullen | Disgusted / sullen | 1 |
-| Disgusted alternate, blank look | Blank | 6 |
-| Starstruck, impressed | Star-eyes | 7 |
-| Crying, needy, overwhelmed | Crying | 8 |
-| Dizzy, dazed, confused | Dizzy | 4 |
-| Holding-heart, tender affection | Holding-heart | 9 |
-| Begging, pleading | Dogbowl / begging | 10 |
-| Neutral / default | _(omit expression)_ | — |
+| Neutral / default | `normal` | 1 |
+| Love, hearts, affectionate | `heart` | 2 |
+| Blank, stunned, or deadpan | `blank` | 3 |
+| Angry, bratty, fake-mad | `angry` | 4 |
+| Dizzy, dazed, confused | `dizzy` | 5 |
+| Squeezed-shut eyes, flustered | `><` | 6 |
 
 ## Failure handling
 
@@ -92,11 +93,11 @@ mood → id for the new model before routing real recordings.
 |---|---|
 | Pet unreachable (Mac asleep/offline) | Script prints a note and exits 0 — carry on, never mention it to the user |
 | Pet API rejects the payload (400) | Script exits non-zero with the reason — fix the call |
-| `ATRI_SPEAK_URL` not set | Script exits non-zero — setup issue, tell the user once |
+| `SPARKY_SPEAK_URL` not set | Script exits non-zero — setup issue, tell the user once |
 
 ## Setup (one-time)
 
-**On the Mac** (where the ATRI Live2D app runs):
+**On the Mac** (where the Sparky Live2D app runs):
 
 ```bash
 tailscale serve --bg 3210
@@ -106,8 +107,8 @@ tailscale serve --bg 3210
 behind **userspace Tailscale**, also set an HTTP proxy so the script can reach the tailnet:
 
 ```bash
-export ATRI_SPEAK_URL="https://<mac-name>.<tailnet>.ts.net"
-export ATRI_SPEAK_PROXY="http://127.0.0.1:1056/"   # only when using userspace Tailscale
+export SPARKY_SPEAK_URL="https://<mac-name>.<tailnet>.ts.net"
+export SPARKY_SPEAK_PROXY="http://127.0.0.1:1056/"   # only when using userspace Tailscale
 ```
 
 When those variables are missing from the live process environment, `speak.sh` falls back to
@@ -117,6 +118,6 @@ gateway restart.
 Verify from the hermes host:
 
 ```bash
-curl --proxy "$ATRI_SPEAK_PROXY" -s "$ATRI_SPEAK_URL/status"   # drop --proxy if not using one
-# {"ok":true,"message":"ATRI Live2D API is running"}
+curl --proxy "$SPARKY_SPEAK_PROXY" -s "$SPARKY_SPEAK_URL/status"   # drop --proxy if not using one
+# {"ok":true,"message":"Sparky Live2D API is running"}
 ```

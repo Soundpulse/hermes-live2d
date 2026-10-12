@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "atri-live2d",
-  "version": "0.1.0",
-  "identifier": "com.shine.atri-live2d",
+  "productName": "Sparky",
+  "version": "0.2.0",
+  "identifier": "com.shine.sparky-live2d",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "火花",
+        "title": "Sparky",
         "width": 620,
         "height": 900,
         "x": -15,
