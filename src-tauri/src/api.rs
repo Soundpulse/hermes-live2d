@@ -1,12 +1,11 @@
-use crate::config::AtriConfig;
+use crate::config::SparkyConfig;
 use axum::{
-    Router,
     body::Body,
     extract::{Path as AxumPath, Query, State},
-    http::{StatusCode, header},
+    http::{header, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json,
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -102,18 +101,12 @@ pub struct ExpressionInfo {
 
 fn expression_list() -> Vec<ExpressionInfo> {
     let entries: Vec<(u32, &str)> = vec![
-        (1, "exp1"),
-        (2, "exp2"),
-        (3, "exp3"),
-        (4, "exp4"),
-        (5, "exp5"),
-        (6, "exp6"),
-        (7, "exp7"),
-        (8, "exp8"),
-        (9, "exp9"),
-        (10, "exp10"),
-        (11, "exp11"),
-        (12, "exp12"),
+        (1, "normal"),
+        (2, "heart"),
+        (3, "blank"),
+        (4, "angry"),
+        (5, "dizzy"),
+        (6, "><"),
     ];
     entries
         .into_iter()
@@ -127,7 +120,7 @@ fn expression_list() -> Vec<ExpressionInfo> {
 // ── Handlers ─────────────────────────────────────────────────────
 
 async fn status_handler() -> Json<ApiResponse> {
-    ApiResponse::success("ATRI Live2D API is running")
+    ApiResponse::success("Sparky Live2D API is running")
 }
 
 async fn expressions_handler() -> Json<Vec<ExpressionInfo>> {
@@ -189,7 +182,7 @@ async fn speak_handler(
     // Inline audio takes precedence over audio_url
     let audio_url = match &payload.audio_data {
         Some(data) => {
-            let dir = crate::config::atri_dir().join("tmp");
+            let dir = crate::config::sparky_dir().join("tmp");
             let path = write_speak_audio(&dir, data, payload.audio_format.as_deref())
                 .map_err(ApiResponse::error)?;
             Some(path.to_string_lossy().into_owned())
@@ -248,7 +241,13 @@ async fn audio_handler(Query(q): Query<AudioQuery>) -> Response {
 
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("read error: {e}")).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("read error: {e}"),
+            )
+                .into_response()
+        }
     };
 
     let content_type = match path.extension().and_then(|e| e.to_str()) {
@@ -266,10 +265,10 @@ async fn audio_handler(Query(q): Query<AudioQuery>) -> Response {
         .unwrap()
 }
 
-// ── Model file serving from ~/.atri/model/ ──────────────────────
+// ── Model file serving from ~/.sparky/model/ ────────────────────
 
 async fn model_handler(AxumPath(path): AxumPath<String>) -> Response {
-    let model_dir = crate::config::atri_dir().join("model");
+    let model_dir = crate::config::sparky_dir().join("model");
     let file_path = model_dir.join(&path);
 
     // Prevent path traversal
@@ -283,7 +282,13 @@ async fn model_handler(AxumPath(path): AxumPath<String>) -> Response {
 
     let bytes = match std::fs::read(&file_path) {
         Ok(b) => b,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("read error: {e}")).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("read error: {e}"),
+            )
+                .into_response()
+        }
     };
 
     let content_type = match file_path.extension().and_then(|e| e.to_str()) {
@@ -323,11 +328,11 @@ pub fn create_router(app_handle: AppHandle) -> Router {
 
 #[cfg(test)]
 mod tests {
-    use super::write_speak_audio;
+    use super::{expression_list, write_speak_audio};
     use base64::Engine;
 
     fn test_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("atri-speak-test-{name}"));
+        let dir = std::env::temp_dir().join(format!("sparky-speak-test-{name}"));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }
@@ -373,19 +378,40 @@ mod tests {
         assert!(write_speak_audio(&dir, &data, Some("exe")).is_err());
         assert!(write_speak_audio(&dir, "not-base64!!!", None).is_err());
     }
+
+    #[test]
+    fn lists_sparky_expressions_in_public_id_order() {
+        let expressions = expression_list();
+        let entries: Vec<(u32, &str)> = expressions
+            .iter()
+            .map(|expression| (expression.id, expression.name.as_str()))
+            .collect();
+
+        assert_eq!(
+            entries,
+            vec![
+                (1, "normal"),
+                (2, "heart"),
+                (3, "blank"),
+                (4, "angry"),
+                (5, "dizzy"),
+                (6, "><"),
+            ]
+        );
+    }
 }
 
-pub async fn start_server(app_handle: AppHandle, config: AtriConfig) {
+pub async fn start_server(app_handle: AppHandle, config: SparkyConfig) {
     let port = config.api_port;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let router = create_router(app_handle);
 
-    println!("ATRI API server listening on http://{addr}");
+    println!("Sparky API server listening on http://{addr}");
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .expect("failed to bind ATRI API server");
+        .expect("failed to bind Sparky API server");
     axum::serve(listener, router)
         .await
-        .expect("ATRI API server error");
+        .expect("Sparky API server error");
 }

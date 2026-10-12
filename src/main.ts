@@ -23,9 +23,12 @@ const app = new PIXI.Application({
 let currentModel: any = null;
 
 const EXPRESSION_NAMES: Record<string, number> = {
-  "exp1": 0, "exp2": 1, "exp3": 2, "exp4": 3,
-  "exp5": 4, "exp6": 5, "exp7": 6, "exp8": 7,
-  "exp9": 8, "exp10": 9, "exp11": 10, "exp12": 11,
+  normal: 0,
+  heart: 1,
+  blank: 2,
+  angry: 3,
+  dizzy: 4,
+  "><": 5,
 };
 
 // Fraction of the window the model is allowed to fill (lower = smaller).
@@ -34,18 +37,14 @@ const MODEL_FIT = 0.6;
 const MODEL_VERTICAL = 0.32;
 // Horizontal center as a fraction of window width (0.5 = centered, lower = left).
 const MODEL_HORIZONTAL = 0.3;
-// Value that flips the model's watermark keyform to hidden (try 0 if 1 doesn't hide it).
-const WATERMARK_HIDE_VALUE = 1;
 // Gap (px) between the speech bubble's tail and the model's head.
 const BUBBLE_GAP = 10;
 // Nudge the tail anchor down from the model's top edge, as a fraction of the
 // model's rendered height, to land on the visible head rather than the
 // transparent padding above it (higher = lower on the head).
 const BUBBLE_HEAD_INSET = 0.3;
-// The "0v0" face (exp6) is just a keyform toggle on key6. We apply it directly
-// each frame while hovering rather than via the expression manager, which
-// doesn't hold reliably — this mirrors how the watermark is hidden below.
-const HOVER_EXPRESSION_PARAMS: Record<string, number> = { key6: 1, key3: 0, key5: 0 };
+// Hold the >< eye style while hovering; reset it to normal on hover-off.
+const HOVER_EXPRESSION_PARAMS: Record<string, number> = { ParamEyeStyle: 4 };
 // How much of the model's bounding box counts as "hovered" (1 = full box
 // incl. transparent padding, lower = tighter to her body).
 const HOVER_HITBOX = 0.7;
@@ -68,13 +67,13 @@ function repositionModel(model: any) {
 
 async function loadModel() {
   try {
-    // Try loading from ~/.atri/model/ via API server, fall back to bundled
-    let modelUrl = "./model/Sparkle.model3.json";
+    // Try loading from ~/.sparky/model/ via API server, fall back to bundled
+    let modelUrl = "./model/Sparky.model3.json";
     try {
-      const resp = await fetch("http://127.0.0.1:3210/model/Sparkle.model3.json", { method: "HEAD" });
+      const resp = await fetch("http://127.0.0.1:3210/model/Sparky.model3.json", { method: "HEAD" });
       if (resp.ok) {
-        modelUrl = "http://127.0.0.1:3210/model/Sparkle.model3.json";
-        console.log("Loading model from ~/.atri/model/");
+        modelUrl = "http://127.0.0.1:3210/model/Sparky.model3.json";
+        console.log("Loading model from ~/.sparky/model/");
       }
     } catch {
       console.log("Loading bundled model");
@@ -187,13 +186,7 @@ app.ticker.add(() => {
   coreModel.setParameterValueById("ParamEyeBallY", focusY);
   coreModel.setParameterValueById("ParamBodyAngleX", focusX * 10);
 
-  // Hide the artist watermark via the model's built-in toggle param(s).
-  // WATERMARK_HIDE_VALUE flips the "水印" keyform to its hidden state.
-  for (const id of ["key12", "Param45", "Param48", "Param49", "Param50"]) {
-    coreModel.setParameterValueById(id, WATERMARK_HIDE_VALUE);
-  }
-
-  // While hovering, hold the "0v0" face by driving its keyform params directly
+  // While hovering, hold the >< face by driving its eye-style parameter directly
   // (unless she's mid-utterance, so speak expressions win).
   if (isHovering && !lipsyncActive) {
     for (const id in HOVER_EXPRESSION_PARAMS) {

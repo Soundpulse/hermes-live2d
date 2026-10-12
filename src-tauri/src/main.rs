@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    atri_live2d_lib::run()
+    sparky_live2d_lib::run()
 }
