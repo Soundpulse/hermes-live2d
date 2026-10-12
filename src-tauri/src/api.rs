@@ -99,22 +99,37 @@ pub struct ExpressionInfo {
     pub name: String,
 }
 
+const EXPRESSION_NAMES: [&str; 6] = ["normal", "heart", "blank", "angry", "dizzy", "><"];
+
 fn expression_list() -> Vec<ExpressionInfo> {
-    let entries: Vec<(u32, &str)> = vec![
-        (1, "normal"),
-        (2, "heart"),
-        (3, "blank"),
-        (4, "angry"),
-        (5, "dizzy"),
-        (6, "><"),
-    ];
-    entries
-        .into_iter()
-        .map(|(id, name)| ExpressionInfo {
-            id,
+    EXPRESSION_NAMES
+        .iter()
+        .enumerate()
+        .map(|(index, name)| ExpressionInfo {
+            id: index as u32 + 1,
             name: name.to_string(),
         })
         .collect()
+}
+
+fn validate_expression(id: Option<u32>, name: Option<&str>) -> Result<(), String> {
+    if id.is_none() && name.is_none() {
+        return Err("must provide id or name".to_string());
+    }
+    if let Some(id) = id {
+        if !(1..=EXPRESSION_NAMES.len() as u32).contains(&id) {
+            return Err(format!(
+                "expression id must be between 1 and {}",
+                EXPRESSION_NAMES.len()
+            ));
+        }
+    }
+    if let Some(name) = name {
+        if !EXPRESSION_NAMES.contains(&name) {
+            return Err(format!("unknown expression name: {name}"));
+        }
+    }
+    Ok(())
 }
 
 // ── Handlers ─────────────────────────────────────────────────────
@@ -131,9 +146,7 @@ async fn expression_handler(
     State(app): State<AppHandle>,
     Json(payload): Json<ExpressionReq>,
 ) -> Result<Json<ApiResponse>, (StatusCode, Json<ApiResponse>)> {
-    if payload.id.is_none() && payload.name.is_none() {
-        return Err(ApiResponse::error("must provide id or name"));
-    }
+    validate_expression(payload.id, payload.name.as_deref()).map_err(ApiResponse::error)?;
     app.emit("api:expression", &payload)
         .map_err(|e| ApiResponse::error(format!("emit failed: {e}")))?;
     Ok(ApiResponse::success("expression event emitted"))
@@ -179,6 +192,10 @@ async fn speak_handler(
     State(app): State<AppHandle>,
     Json(payload): Json<SpeakReq>,
 ) -> Result<Json<ApiResponse>, (StatusCode, Json<ApiResponse>)> {
+    if let Some(expression) = payload.expression {
+        validate_expression(Some(expression), None).map_err(ApiResponse::error)?;
+    }
+
     // Inline audio takes precedence over audio_url
     let audio_url = match &payload.audio_data {
         Some(data) => {
@@ -328,7 +345,7 @@ pub fn create_router(app_handle: AppHandle) -> Router {
 
 #[cfg(test)]
 mod tests {
-    use super::{expression_list, write_speak_audio};
+    use super::{expression_list, validate_expression, write_speak_audio};
     use base64::Engine;
 
     fn test_dir(name: &str) -> std::path::PathBuf {
@@ -398,6 +415,19 @@ mod tests {
                 (6, "><"),
             ]
         );
+    }
+
+    #[test]
+    fn validates_only_public_sparky_expression_ids_and_names() {
+        assert!(validate_expression(Some(1), None).is_ok());
+        assert!(validate_expression(Some(6), None).is_ok());
+        assert!(validate_expression(None, Some("normal")).is_ok());
+        assert!(validate_expression(None, Some("><")).is_ok());
+
+        assert!(validate_expression(Some(0), None).is_err());
+        assert!(validate_expression(Some(7), None).is_err());
+        assert!(validate_expression(None, Some("exp1")).is_err());
+        assert!(validate_expression(None, Some("squint")).is_err());
     }
 }
 
