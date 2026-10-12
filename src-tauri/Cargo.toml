@@ -1,7 +1,7 @@
 [package]
 name = "sparky-live2d"
 version = "0.1.0"
-description = "A Tauri App"
+description = "Sparky, a Live2D desktop pet your agent can speak through"
 authors = ["you"]
 edition = "2021"
 

@@ -9,30 +9,30 @@ importers:
   .:
     dependencies:
       '@tauri-apps/api':
-        specifier: ^2
+        specifier: 2.10.1
         version: 2.10.1
       '@tauri-apps/plugin-global-shortcut':
-        specifier: ^2.3.1
+        specifier: 2.3.1
         version: 2.3.1
       '@tauri-apps/plugin-opener':
-        specifier: ^2
+        specifier: 2.5.3
         version: 2.5.3
       pixi-live2d-display:
-        specifier: ^0.4.0
+        specifier: 0.4.0
         version: 0.4.0(0736f5bd67d2e4de7e9fff36ad63fa2e)
       pixi.js:
-        specifier: ^6.5.10
+        specifier: 6.5.10
         version: 6.5.10
     devDependencies:
       '@tauri-apps/cli':
-        specifier: ^2
+        specifier: 2.10.1
         version: 2.10.1
       typescript:
-        specifier: ~5.6.2
+        specifier: 5.6.3
         version: 5.6.3
       vite:
-        specifier: ^6.0.3
-        version: 6.4.1
+        specifier: 6.4.4
+        version: 6.4.4
 
 packages:
 
@@ -997,8 +997,8 @@ packages:
     resolution: {integrity: sha512-oCwdVC7mTuWiPyjLUz/COz5TLk6wgp0RCsN+wHZ2Ekneac9w8uuV0njcbbie2ME+Vs+d6duwmYuR3HgQXs1fOg==}
     engines: {node: '>= 0.4'}
 
-  vite@6.4.1:
-    resolution: {integrity: sha512-+Oxm7q9hDoLMyJOYfUYBuHQo+dkAloi33apOPP56pzj+vsdJDzr+j1NISE5pyaAuKL4A3UD34qd0lx5+kfKp2g==}
+  vite@6.4.4:
+    resolution: {integrity: sha512-xGjU/SyjeNyb0E4KxXBvYz/1C+3JXuujvf2hXNOtnlcE+58o5ajd9N2/n2VhkiJvpCP2qQasnUpx5PXNeI+p1Q==}
     engines: {node: ^18.0.0 || ^20.0.0 || >=22.0.0}
     hasBin: true
     peerDependencies:
@@ -1881,7 +1881,7 @@ snapshots:
       punycode: 1.4.1
       qs: 6.15.0
 
-  vite@6.4.1:
+  vite@6.4.4:
     dependencies:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.3)

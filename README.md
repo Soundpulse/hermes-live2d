@@ -1,7 +1,7 @@
-# Sparky Live2D — a desktop pet your agent can speak through
+# Sparky: a desktop pet your agent can speak through
 
 <p align="center">
-  <img src="assets/screenshot.png" width="240" alt="Sparky Live2D desktop pet" />
+  <img src="assets/banner.jpg" width="100%" alt="Sparky, the hermes-live2d desktop pet" />
 </p>
 
 <p align="center">
@@ -15,7 +15,7 @@
   <a href="https://github.com/Soundpulse/hermes-live2d/releases">Releases</a> ·
   <a href="docs/API.md">API reference</a> ·
   <a href="skills/hermes-live2d-voice/SKILL.md">Hermes skill</a> ·
-  <a href="examples/claude-code-skill.md">Claude Code skill</a>
+  <a href="AGENTS.md">Install with an agent</a>
 </p>
 
 **Useful for:**
@@ -27,6 +27,9 @@
 ---
 
 ## Enable this for your hermes agent
+
+> **Installing with an AI agent?** Point it at [`AGENTS.md`](AGENTS.md). It splits the steps
+> between the agent host and your Mac and ends with a real voice test.
 
 This is the main use case. Your hermes agent runs somewhere (e.g. an EC2 box, chatting over
 the Discord gateway); the pet runs on your Mac. Whenever the agent generates a TTS recording
@@ -96,20 +99,29 @@ devices.
 Copy the bundled skill into your hermes agent's skills directory:
 
 ```bash
-cp -r skills/hermes-live2d-voice /path/to/hermes/skills/
+mkdir -p ~/.hermes/skills/creative
+cp -r skills/hermes-live2d-voice ~/.hermes/skills/creative/
 ```
 
-It's a standard `SKILL.md` + `speak.sh` bundle. Tell the agent's environment where the pet lives:
+It's a standard `SKILL.md` + `speak.sh` bundle. Tell the agent where the pet lives by adding it
+to the hermes env file, so it survives gateway restarts (a shell `export` does not):
 
 ```bash
-export SPARKY_SPEAK_URL="https://<mac-name>.<tailnet>.ts.net"
+echo 'SPARKY_SPEAK_URL=https://<mac-name>.<tailnet>.ts.net' >> ~/.hermes/.env
+# Only if the agent host runs Tailscale in userspace mode (common on containers/VPS):
+echo 'SPARKY_SPEAK_PROXY=http://127.0.0.1:1056' >> ~/.hermes/.env
 ```
 
-Verify from the agent host:
+Restart the hermes gateway afterwards; it exports these keys to the skill. `speak.sh` never reads
+the env file itself.
+
+Verify from the agent host, then play a real clip end to end:
 
 ```bash
-curl -s "$SPARKY_SPEAK_URL/status"
+curl -s ${SPARKY_SPEAK_PROXY:+--proxy "$SPARKY_SPEAK_PROXY"} "$SPARKY_SPEAK_URL/status"
 # {"ok":true,"message":"Sparky Live2D API is running"}
+bash ~/.hermes/skills/creative/hermes-live2d-voice/speak.sh /path/to/any.mp3 2 "hi!"
+# Sparky should talk with heart eyes.
 ```
 
 That's it. See [`skills/hermes-live2d-voice/SKILL.md`](skills/hermes-live2d-voice/SKILL.md)
@@ -128,6 +140,7 @@ asleep or offline.
 - **HTTP API** — local REST API (default port 3210) for external programs to drive the pet
 - **Window memory** — remembers window position and size across launches
 - **System tray** — tray icon to lock/unlock and quit
+- **Calm idle** — breathing and blinking with subtle sway, so the pet does not fidget
 
 ## HTTP API at a glance
 
@@ -181,15 +194,11 @@ Config lives at `~/.sparky/config.json`, created on first launch:
 - Drop a custom Live2D model under `~/.sparky/model/` to load it instead of the bundled Sparky
   model on startup.
 
-The bundled Sparky character is based on the free **Spark (火花)** Live2D model by 夜墨ww
-([booth.pm/en/items/8265367](https://booth.pm/en/items/8265367)).
+The bundled Sparky model is original art, rigged with [psd2live](https://github.com/tsunehimatoi/psd2live).
 
-## Other integrations
+## Custom TTS
 
-- **Claude Code** — [`examples/claude-code-skill.md`](examples/claude-code-skill.md) is a
-  TTS-agnostic example skill: generate speech with your own TTS (GPT-SoVITS, Edge-TTS, …) and
-  drive the pet after each reply.
-- **Custom TTS voice (optional)** — any engine that produces a supported audio file can drive
+Any TTS engine that produces a supported audio file can drive
   Sparky; the Hermes path supplies its own TTS audio.
 
 ## Tech stack
@@ -210,6 +219,8 @@ The bundled Sparky character is based on the free **Spark (火花)** Live2D mode
 - **Model-bound parameters** — expression/keyform mappings are hardcoded for the bundled model;
   swapping in a different Live2D model requires code changes.
 - **Volume-driven lip sync** — mouth movement maps from audio volume, not viseme-accurate phonemes.
+- **Security scan** — `skills/hermes-live2d-voice` is scanned with
+  [NVIDIA SkillSpector](https://github.com/NVIDIA/SkillSpector) (`skillspector scan skills/hermes-live2d-voice --no-llm`).
 - **Local, unauthenticated API** — the HTTP API listens on `127.0.0.1` with no auth; only expose
   it to trusted devices (e.g. a private tailnet), never the public internet.
 - **Mouse tracking via Tauri** — `cursor_position()` behavior can vary across macOS versions.
