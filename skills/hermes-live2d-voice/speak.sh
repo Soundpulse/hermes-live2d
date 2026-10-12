@@ -12,20 +12,8 @@ AUDIO_FILE="${1:?usage: speak.sh <audio-file> [expression-id] [bubble-text]}"
 EXPRESSION="${2:-}"
 TEXT="${3:-}"
 
-# The gateway usually exports SPARKY_SPEAK_URL (and SPARKY_SPEAK_PROXY for userspace
-# Tailscale). When they're missing from the live environment — e.g. a
-# terminal-launched tool call before a gateway restart — fall back to the hermes
-# env file so routing still works.
-if [ -z "${SPARKY_SPEAK_URL:-}" ]; then
-  ENV_FILE="${HERMES_HOME:-$HOME/.hermes}/.env"
-  if [ -f "$ENV_FILE" ]; then
-    set -a
-    # shellcheck disable=SC1090
-    . "$ENV_FILE"
-    set +a
-  fi
-fi
-
+# The hermes gateway exports SPARKY_SPEAK_URL (and SPARKY_SPEAK_PROXY) from its env file.
+# This script deliberately does not read any env or secrets file itself.
 : "${SPARKY_SPEAK_URL:?SPARKY_SPEAK_URL is not set (e.g. https://my-mac.my-tailnet.ts.net)}"
 
 [ -f "$AUDIO_FILE" ] || { echo "speak.sh: file not found: $AUDIO_FILE" >&2; exit 1; }

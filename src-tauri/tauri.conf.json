@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "sparky-live2d",
+  "productName": "Sparky",
   "version": "0.1.0",
   "identifier": "com.shine.sparky-live2d",
   "build": {

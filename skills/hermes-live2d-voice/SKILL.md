@@ -3,6 +3,11 @@ name: hermes-live2d-voice
 description: "Use when generated TTS recordings should play through the Sparky Live2D desktop pet."
 version: 2.0.0
 platforms: [linux, macos]
+allowed-tools: [Bash]
+permissions:
+  network: ["$SPARKY_SPEAK_URL"]
+  env: [SPARKY_SPEAK_URL, SPARKY_SPEAK_PROXY]
+  files: [read: audio file passed as argument]
 metadata:
   hermes:
     tags: [live2d, tts, voice, avatar, desktop-pet, hermes]
