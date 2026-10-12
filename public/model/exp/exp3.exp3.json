@@ -5,7 +5,7 @@
  "Parameters": [
   {
    "Id": "ParamEyeStyle",
-   "Value": 0,
+   "Value": 2,
    "Blend": "Overwrite"
   },
   {
