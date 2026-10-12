@@ -32,7 +32,7 @@ const EXPRESSION_NAMES: Record<string, number> = {
 };
 
 // Fraction of the window the model is allowed to fill (lower = smaller).
-const MODEL_FIT = 0.57;
+const MODEL_FIT = 0.55;
 // Vertical center as a fraction of window height (lower = higher up).
 const MODEL_VERTICAL = 0.32;
 // Horizontal center as a fraction of window width (0.5 = centered, lower = left).
@@ -42,7 +42,7 @@ const BUBBLE_GAP = 10;
 // Nudge the tail anchor down from the model's top edge, as a fraction of the
 // model's rendered height, to land on the visible head rather than the
 // transparent padding above it (higher = lower on the head).
-const BUBBLE_HEAD_INSET = 0.3;
+const BUBBLE_HEAD_INSET = 0.2;
 // Hold the >< eye style while hovering; reset it to normal on hover-off.
 const HOVER_EXPRESSION_PARAMS: Record<string, number> = { ParamEyeStyle: 4 };
 // How much of the model's bounding box counts as "hovered" (1 = full box
