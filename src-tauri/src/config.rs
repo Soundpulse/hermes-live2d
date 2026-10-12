@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AtriConfig {
+pub struct SparkyConfig {
     #[serde(default = "default_api_port")]
     pub api_port: u16,
     #[serde(default)]
@@ -13,7 +13,7 @@ fn default_api_port() -> u16 {
     3210
 }
 
-impl Default for AtriConfig {
+impl Default for SparkyConfig {
     fn default() -> Self {
         Self {
             api_port: default_api_port(),
@@ -22,10 +22,10 @@ impl Default for AtriConfig {
     }
 }
 
-pub fn atri_dir() -> PathBuf {
+pub fn sparky_dir() -> PathBuf {
     dirs::home_dir()
         .expect("cannot determine home directory")
-        .join(".atri")
+        .join(".sparky")
 }
 
 // ── Window state persistence ────────────────────────────────────
@@ -39,13 +39,13 @@ pub struct WindowState {
 }
 
 pub fn load_window_state() -> Option<WindowState> {
-    let path = atri_dir().join("window_state.json");
+    let path = sparky_dir().join("window_state.json");
     let content = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&content).ok()
 }
 
 pub fn save_window_state(state: &WindowState) {
-    let path = atri_dir().join("window_state.json");
+    let path = sparky_dir().join("window_state.json");
     if let Ok(json) = serde_json::to_string_pretty(state) {
         let _ = std::fs::write(path, json);
     }
@@ -53,22 +53,22 @@ pub fn save_window_state(state: &WindowState) {
 
 // ── App config ──────────────────────────────────────────────────
 
-pub fn load_config() -> AtriConfig {
-    let dir = atri_dir();
+pub fn load_config() -> SparkyConfig {
+    let dir = sparky_dir();
     let config_path = dir.join("config.json");
 
     if !dir.exists() {
-        std::fs::create_dir_all(&dir).expect("failed to create ~/.atri");
+        std::fs::create_dir_all(&dir).expect("failed to create ~/.sparky");
     }
 
     if config_path.exists() {
         let content = std::fs::read_to_string(&config_path).unwrap_or_default();
         serde_json::from_str(&content).unwrap_or_else(|e| {
             eprintln!("warn: failed to parse config.json: {e}, using defaults");
-            AtriConfig::default()
+            SparkyConfig::default()
         })
     } else {
-        let config = AtriConfig::default();
+        let config = SparkyConfig::default();
         let json = serde_json::to_string_pretty(&config).unwrap();
         let _ = std::fs::write(&config_path, json);
         println!("Created default config at {}", config_path.display());

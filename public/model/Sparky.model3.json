@@ -1,0 +1,76 @@
+{
+ "Version": 3,
+ "FileReferences": {
+  "Moc": "Sparky.moc3",
+  "Textures": [
+   "Sparky.2048/texture_00.png"
+  ],
+  "Physics": "Sparky.physics3.json",
+  "DisplayInfo": "Sparky.cdi3.json",
+  "Motions": {
+   "Idle": [
+    {
+     "File": "motion/idle.motion3.json"
+    }
+   ],
+   "Blink": [
+    {
+     "File": "motion/blink.motion3.json"
+    }
+   ],
+   "Nod": [
+    {
+     "File": "motion/nod.motion3.json"
+    }
+   ],
+   "Shake": [
+    {
+     "File": "motion/shake.motion3.json"
+    }
+   ]
+  },
+  "Expressions": [
+   {
+    "Name": "normal",
+    "File": "exp/exp1.exp3.json"
+   },
+   {
+    "Name": "heart",
+    "File": "exp/exp2.exp3.json"
+   },
+   {
+    "Name": "blank",
+    "File": "exp/exp3.exp3.json"
+   },
+   {
+    "Name": "angry",
+    "File": "exp/exp4.exp3.json"
+   },
+   {
+    "Name": "dizzy",
+    "File": "exp/exp5.exp3.json"
+   },
+   {
+    "Name": "><",
+    "File": "exp/exp6.exp3.json"
+   }
+  ]
+ },
+ "Groups": [
+  {
+   "Target": "Parameter",
+   "Name": "EyeBlink",
+   "Ids": [
+    "ParamEyeLOpen",
+    "ParamEyeROpen"
+   ]
+  },
+  {
+   "Target": "Parameter",
+   "Name": "LipSync",
+   "Ids": [
+    "ParamMouthOpenY"
+   ]
+  }
+ ]
+}

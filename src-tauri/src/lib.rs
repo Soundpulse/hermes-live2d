@@ -3,9 +3,9 @@ mod config;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
-    AppHandle, Emitter, Manager,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
+    AppHandle, Emitter, Manager,
 };
 
 static LOCKED: AtomicBool = AtomicBool::new(true);
@@ -69,22 +69,20 @@ pub fn run() {
             let _tray = TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                .on_menu_event(|app_handle: &AppHandle, event| {
-                    match event.id.as_ref() {
-                        "toggle" => {
-                            let currently_locked = LOCKED.load(Ordering::SeqCst);
-                            apply_lock_state(app_handle, !currently_locked);
-                        }
-                        "quit" => {
-                            app_handle.exit(0);
-                        }
-                        _ => {}
+                .on_menu_event(|app_handle: &AppHandle, event| match event.id.as_ref() {
+                    "toggle" => {
+                        let currently_locked = LOCKED.load(Ordering::SeqCst);
+                        apply_lock_state(app_handle, !currently_locked);
                     }
+                    "quit" => {
+                        app_handle.exit(0);
+                    }
+                    _ => {}
                 })
                 .build(app)?;
 
             let cfg = config::load_config();
-            println!("ATRI config dir: {}", config::atri_dir().display());
+            println!("Sparky config dir: {}", config::sparky_dir().display());
 
             let app_handle_clone = app.handle().clone();
             std::thread::spawn(move || {
@@ -98,7 +96,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if matches!(event, tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)) {
+            if matches!(
+                event,
+                tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)
+            ) {
                 if let (Ok(pos), Ok(size)) = (window.outer_position(), window.inner_size()) {
                     config::save_window_state(&config::WindowState {
                         x: pos.x,
