@@ -101,3 +101,31 @@ test("rapid cursor changes are softened and upward iris travel is capped", () =>
   );
   assert.match(source, /Math\.min\(MAX_IRIS_UP, irisY\)/);
 });
+
+test("hover includes the full hair area while keeping other edges tight", () => {
+  const source = readFileSync(resolve(root, "src/main.ts"), "utf8");
+
+  assert.match(source, /const hoverTop = currentModel\.y - currentModel\.height \/ 2;/);
+  assert.match(
+    source,
+    /const hoverBottom = currentModel\.y \+ \(currentModel\.height \/ 2\) \* HOVER_HITBOX;/,
+  );
+  assert.match(source, /cy >= hoverTop && cy <= hoverBottom/);
+  assert.doesNotMatch(source, /cy >= currentModel\.y - halfH/);
+});
+
+test("the model uses the requested compact scale", () => {
+  const source = readFileSync(resolve(root, "src/main.ts"), "utf8");
+
+  assert.match(source, /const MODEL_FIT = 0\.55;/);
+});
+
+test("the chat bubble anchors near the top of the head", () => {
+  const source = readFileSync(resolve(root, "src/main.ts"), "utf8");
+
+  assert.match(source, /const BUBBLE_HEAD_INSET = 0\.2;/);
+  assert.match(
+    source,
+    /const anchorY = headTop \+ currentModel\.height \* BUBBLE_HEAD_INSET;/,
+  );
+});
