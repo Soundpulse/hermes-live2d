@@ -116,6 +116,9 @@ fn validate_expression(id: Option<u32>, name: Option<&str>) -> Result<(), String
     if id.is_none() && name.is_none() {
         return Err("must provide id or name".to_string());
     }
+    if id.is_some() && name.is_some() {
+        return Err("provide either id or name, not both".to_string());
+    }
     if let Some(id) = id {
         if !(1..=EXPRESSION_NAMES.len() as u32).contains(&id) {
             return Err(format!(
@@ -428,6 +431,7 @@ mod tests {
         assert!(validate_expression(Some(7), None).is_err());
         assert!(validate_expression(None, Some("exp1")).is_err());
         assert!(validate_expression(None, Some("squint")).is_err());
+        assert!(validate_expression(Some(1), Some("angry")).is_err());
     }
 }
 
