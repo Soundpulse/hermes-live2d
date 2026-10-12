@@ -32,7 +32,7 @@ const EXPRESSION_NAMES: Record<string, number> = {
 };
 
 // Fraction of the window the model is allowed to fill (lower = smaller).
-const MODEL_FIT = 0.6;
+const MODEL_FIT = 0.57;
 // Vertical center as a fraction of window height (lower = higher up).
 const MODEL_VERTICAL = 0.32;
 // Horizontal center as a fraction of window width (0.5 = centered, lower = left).
@@ -181,14 +181,15 @@ setInterval(async () => {
     // blends these targets into the eye, head, and body parameters together.
     currentModel.internalModel?.focusController.focus(smoothedFocusX, smoothedFocusY);
 
-    // Hover: is the cursor over her? Shrink the bounds toward center so we
-    // react to her body, not the transparent canvas padding. (anchor is 0.5,
-    // so currentModel.x/y is the center.)
+    // Hover: keep the full upper bound so her hair is interactive, while
+    // tightening the sides and lower bound to avoid transparent padding.
+    // (The anchor is 0.5, so currentModel.x/y is the center.)
     const halfW = (currentModel.width / 2) * HOVER_HITBOX;
-    const halfH = (currentModel.height / 2) * HOVER_HITBOX;
+    const hoverTop = currentModel.y - currentModel.height / 2;
+    const hoverBottom = currentModel.y + (currentModel.height / 2) * HOVER_HITBOX;
     const over =
       cx >= currentModel.x - halfW && cx <= currentModel.x + halfW &&
-      cy >= currentModel.y - halfH && cy <= currentModel.y + halfH;
+      cy >= hoverTop && cy <= hoverBottom;
     if (over !== isHovering) {
       isHovering = over;
       canvas.classList.toggle("hovered", over);
