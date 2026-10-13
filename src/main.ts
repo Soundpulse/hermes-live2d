@@ -122,7 +122,9 @@ async function loadModel() {
     window.addEventListener("resize", () => {
       if (currentModel) repositionModel(currentModel);
       if (!bubbleEl.classList.contains("hidden")) positionBubble();
+      positionSentryIndicator();
     });
+    positionSentryIndicator();
   } catch (e: any) {
     console.error("Failed to load model:", e);
   }
@@ -456,3 +458,68 @@ listen("api:speak", (event: any) => {
     showBubble(text, duration);
   }
 });
+
+// --- Sentry Mode indicator ---
+// Sentry Mode is started and stopped by the agent over the HTTP API
+// (/sentry/start, /sentry/stop); the pet only displays its state.
+type SentryState = {
+  active: boolean;
+  target: string | null;
+  level: number;
+  violations: number;
+};
+
+const sentryEl = document.getElementById("sentry-indicator")!;
+const sentryText = document.getElementById("sentry-text")!;
+let sentryAlertTimer: number | null = null;
+
+// Gap (px) between the model's rendered bottom edge and the indicator.
+const SENTRY_GAP = 6;
+
+function positionSentryIndicator() {
+  if (!currentModel) return;
+  const bottom = currentModel.y + currentModel.height / 2;
+  const top = Math.min(bottom + SENTRY_GAP, window.innerHeight - 28);
+  sentryEl.style.top = `${Math.max(8, top)}px`;
+  sentryEl.style.left = `${currentModel.x}px`;
+}
+
+function renderSentry(state: SentryState) {
+  sentryEl.classList.remove("level-1", "level-2", "level-3");
+  if (!state.active) {
+    sentryEl.classList.add("hidden");
+    sentryEl.classList.remove("alert");
+    return;
+  }
+  const level = Math.max(0, Math.min(3, state.level || 0));
+  if (level > 0) sentryEl.classList.add(`level-${level}`);
+  sentryText.textContent = `Sentry: ${state.target ?? ""}`;
+  positionSentryIndicator();
+  sentryEl.classList.remove("hidden");
+}
+
+listen<SentryState>("sentry:state", (event) => renderSentry(event.payload));
+
+listen("sentry:violation", () => {
+  if (sentryAlertTimer) clearTimeout(sentryAlertTimer);
+  sentryEl.classList.add("alert");
+  sentryAlertTimer = window.setTimeout(() => {
+    sentryEl.classList.remove("alert");
+    sentryAlertTimer = null;
+  }, 4000);
+});
+
+// Restore the indicator after a webview reload while a session is running.
+fetch("http://127.0.0.1:3210/sentry/status")
+  .then((r) => r.json())
+  .then((s) =>
+    renderSentry({
+      active: !!s.active,
+      target: s.target ?? null,
+      level: s.level ?? 0,
+      violations: s.violations ?? 0,
+    }),
+  )
+  .catch(() => {
+    // API not up yet; the next sentry:state event will update the indicator.
+  });
