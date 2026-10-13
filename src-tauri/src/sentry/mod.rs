@@ -364,7 +364,10 @@ async fn handle_violation(app: AppHandle, id: u64, job: ViolationJob) {
         None => false,
     };
 
-    if !delivered {
+    // The callback can outlive the session: stop/replace aborts only the
+    // sampling loop, not this detached handler. Do not roast for a session
+    // that is no longer the current one.
+    if !delivered && is_current(&app, id) {
         // No agent to roast for us: scold locally with a bubble and angry face.
         let _ = app.emit(
             "api:speak",
@@ -375,6 +378,13 @@ async fn handle_violation(app: AppHandle, id: u64, job: ViolationJob) {
             }),
         );
     }
+}
+
+/// Whether session `id` is still the running session.
+fn is_current(app: &AppHandle, id: u64) -> bool {
+    let state = app.state::<SentryState>();
+    let guard = state.inner.lock().unwrap();
+    guard.as_ref().is_some_and(|s| s.id == id)
 }
 
 fn record_error(app: &AppHandle, id: u64, message: String) {
