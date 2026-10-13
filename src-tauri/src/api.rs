@@ -1,8 +1,9 @@
 use crate::config::SparkyConfig;
 use axum::{
     body::Body,
-    extract::{Path as AxumPath, Query, State},
-    http::{header, StatusCode},
+    extract::{Path as AxumPath, Query, Request, State},
+    http::{header, HeaderValue, Method, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -10,7 +11,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tauri::{AppHandle, Emitter};
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 // ── Request types ────────────────────────────────────────────────
 
@@ -248,6 +249,32 @@ async fn lipsync_stop_handler(
 
 // ── Sentry Mode ─────────────────────────────────────────────────
 
+/// Sentry endpoints expose live window titles and tab URLs, so browser pages
+/// must not reach them. Agents (curl, sentry.sh) send no `Origin` header and
+/// pass; the pet's own webview origins pass; any other browser origin is
+/// rejected before the handler runs.
+async fn guard_sentry_origin(req: Request, next: Next) -> Response {
+    let allowed = match req.headers().get(header::ORIGIN) {
+        None => true,
+        Some(origin) => origin
+            .to_str()
+            .map(crate::sentry::core::is_app_origin)
+            .unwrap_or(false),
+    };
+    if allowed {
+        next.run(req).await
+    } else {
+        (
+            StatusCode::FORBIDDEN,
+            Json(ApiResponse {
+                ok: false,
+                message: "sentry endpoints are not available to browser pages".into(),
+            }),
+        )
+            .into_response()
+    }
+}
+
 async fn sentry_start_handler(
     State(app): State<AppHandle>,
     Json(payload): Json<crate::sentry::StartReq>,
@@ -350,6 +377,24 @@ async fn model_handler(AxumPath(path): AxumPath<String>) -> Response {
 // ── Router & Server ──────────────────────────────────────────────
 
 pub fn create_router(app_handle: AppHandle) -> Router {
+    // Sentry routes are mounted outside the permissive CORS layer. Only the
+    // pet's own webview origins get CORS headers; other origins are refused.
+    let sentry_cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _| {
+            origin
+                .to_str()
+                .map(crate::sentry::core::is_app_origin)
+                .unwrap_or(false)
+        }))
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers([header::CONTENT_TYPE]);
+    let sentry = Router::new()
+        .route("/sentry/start", post(sentry_start_handler))
+        .route("/sentry/stop", post(sentry_stop_handler))
+        .route("/sentry/status", get(sentry_status_handler))
+        .layer(sentry_cors)
+        .layer(middleware::from_fn(guard_sentry_origin));
+
     Router::new()
         .route("/status", get(status_handler))
         .route("/expressions", get(expressions_handler))
@@ -359,12 +404,10 @@ pub fn create_router(app_handle: AppHandle) -> Router {
         .route("/bubble", post(bubble_handler))
         .route("/lipsync/start", post(lipsync_start_handler))
         .route("/lipsync/stop", post(lipsync_stop_handler))
-        .route("/sentry/start", post(sentry_start_handler))
-        .route("/sentry/stop", post(sentry_stop_handler))
-        .route("/sentry/status", get(sentry_status_handler))
         .route("/audio", get(audio_handler))
         .route("/model/{*path}", get(model_handler))
         .layer(CorsLayer::permissive())
+        .merge(sentry)
         .with_state(app_handle)
 }
 

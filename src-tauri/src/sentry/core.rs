@@ -801,10 +801,32 @@ pub fn validate_callback_url(url: &str) -> Result<(), String> {
     if url.chars().any(|c| c.is_whitespace() || c.is_control()) || url.len() > 2048 {
         return Err("callback_url contains invalid characters".into());
     }
+    let rest = strip_scheme(url);
+    let authority = &rest[..rest.find(['/', '?', '#']).unwrap_or(rest.len())];
+    if authority.contains('@') {
+        return Err("callback_url must not contain credentials".into());
+    }
     match split_url(url) {
         Some((host, _)) if !host.is_empty() => Ok(()),
         _ => Err("callback_url has no host".into()),
     }
+}
+
+/// Origins of the pet's own webview: the bundled app (`tauri://localhost` on
+/// macOS, `http(s)://tauri.localhost` elsewhere) and the Vite dev server.
+/// Every other browser origin is refused by the Sentry endpoints.
+pub const APP_ORIGINS: &[&str] = &[
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
+];
+
+pub fn is_app_origin(origin: &str) -> bool {
+    APP_ORIGINS
+        .iter()
+        .any(|o| o.eq_ignore_ascii_case(origin.trim()))
 }
 
 // ── Tests ───────────────────────────────────────────────────────
@@ -1267,6 +1289,32 @@ mod tests {
         assert!(validate_callback_url("-K/etc/passwd").is_err());
         assert!(validate_callback_url("https://a.com/x y").is_err());
         assert!(validate_callback_url("https://").is_err());
+        assert!(validate_callback_url("javascript:alert(1)").is_err());
+        assert!(validate_callback_url("gopher://a.com/").is_err());
+        assert!(validate_callback_url("https://trusted.example@evil.example/").is_err());
+        assert!(validate_callback_url("https://a.com/path?x=a@b").is_ok());
+    }
+
+    #[test]
+    fn only_app_origins_are_accepted() {
+        for o in [
+            "tauri://localhost",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+            "http://localhost:1420",
+        ] {
+            assert!(is_app_origin(o), "{o}");
+        }
+        for o in [
+            "https://evil.example",
+            "http://localhost:3000",
+            "http://127.0.0.1:3210",
+            "null",
+            "",
+            "tauri://localhost.evil.example",
+        ] {
+            assert!(!is_app_origin(o), "{o}");
+        }
     }
 
     #[test]
