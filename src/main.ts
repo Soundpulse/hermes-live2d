@@ -475,13 +475,25 @@ let sentryAlertTimer: number | null = null;
 
 // Gap (px) between the model's rendered bottom edge and the indicator.
 const SENTRY_GAP = 6;
+// Minimum gap (px) between the indicator and the window's left/right edges.
+const SENTRY_EDGE = 8;
 
 function positionSentryIndicator() {
   if (!currentModel) return;
   const bottom = currentModel.y + currentModel.height / 2;
   const top = Math.min(bottom + SENTRY_GAP, window.innerHeight - 28);
   sentryEl.style.top = `${Math.max(8, top)}px`;
-  sentryEl.style.left = `${currentModel.x}px`;
+  // The indicator is centered on `left` (translateX(-50%) in CSS). Keep it
+  // under the model when it fits, otherwise clamp it inside the window using
+  // its rendered width.
+  const half = sentryEl.offsetWidth / 2;
+  const minCenter = SENTRY_EDGE + half;
+  const maxCenter = window.innerWidth - SENTRY_EDGE - half;
+  const center =
+    minCenter > maxCenter
+      ? window.innerWidth / 2
+      : Math.min(Math.max(currentModel.x, minCenter), maxCenter);
+  sentryEl.style.left = `${center}px`;
 }
 
 function renderSentry(state: SentryState) {
