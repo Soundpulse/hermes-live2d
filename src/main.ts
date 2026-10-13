@@ -510,7 +510,14 @@ function renderSentry(state: SentryState) {
   sentryEl.classList.remove("hidden");
 }
 
-listen<SentryState>("sentry:state", (event) => renderSentry(event.payload));
+// Set once a sentry:state event arrives. The startup status fetch below is
+// older than any event, so its result is dropped after that point.
+let sentryEventSeen = false;
+
+listen<SentryState>("sentry:state", (event) => {
+  sentryEventSeen = true;
+  renderSentry(event.payload);
+});
 
 listen("sentry:violation", () => {
   if (sentryAlertTimer) clearTimeout(sentryAlertTimer);
@@ -524,14 +531,15 @@ listen("sentry:violation", () => {
 // Restore the indicator after a webview reload while a session is running.
 fetch("http://127.0.0.1:3210/sentry/status")
   .then((r) => r.json())
-  .then((s) =>
+  .then((s) => {
+    if (sentryEventSeen) return; // a newer event already rendered the state
     renderSentry({
       active: !!s.active,
       target: s.target ?? null,
       level: s.level ?? 0,
       violations: s.violations ?? 0,
-    }),
-  )
+    });
+  })
   .catch(() => {
     // API not up yet; the next sentry:state event will update the indicator.
   });
