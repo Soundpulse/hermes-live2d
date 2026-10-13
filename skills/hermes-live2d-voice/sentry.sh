@@ -8,9 +8,10 @@
 #
 # Requires: SPARKY_SPEAK_URL (same pet URL that speak.sh uses).
 # Optional: SPARKY_SPEAK_PROXY, SPARKY_SENTRY_CALLBACK_URL, SPARKY_SENTRY_CALLBACK_SECRET.
-# The callback URL and secret are injected from the environment on `start`
-# (unless the JSON already sets callback_url), so the secret never has to
-# appear on the command line.
+# On `start`, callback_url is injected from the environment unless the JSON
+# already sets one. The secret is added only when the effective callback_url
+# equals SPARKY_SENTRY_CALLBACK_URL, so it never has to appear on the command
+# line and is never sent to a different URL.
 #
 # Exit codes: 0 success; 1 caller/setup error or rejected request; 2 pet unreachable.
 set -uo pipefail
@@ -37,8 +38,14 @@ if action == "start":
     cb_secret = os.environ.get("SPARKY_SENTRY_CALLBACK_SECRET")
     if cb_url and "callback_url" not in payload:
         payload["callback_url"] = cb_url
-        if cb_secret:
-            payload["callback_secret"] = cb_secret
+    # Sign only callbacks that go to the configured URL; never leak the
+    # secret to a different callback_url supplied in the JSON.
+    if (
+        cb_url
+        and cb_secret
+        and str(payload.get("callback_url", "")).strip() == cb_url.strip()
+    ):
+        payload["callback_secret"] = cb_secret
     req = urllib.request.Request(
         base + "/sentry/start",
         data=json.dumps(payload).encode(),
