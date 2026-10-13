@@ -1,16 +1,16 @@
 ---
 name: hermes-live2d-voice
-description: "Use when generated TTS recordings should play through the Sparky Live2D desktop pet."
-version: 2.0.0
+description: "Use when TTS recordings should play on the Sparky Live2D pet, or the user wants focus monitoring (Sentry Mode)."
+version: 2.1.0
 platforms: [linux, macos]
 allowed-tools: [Bash]
 permissions:
   network: ["$SPARKY_SPEAK_URL"]
-  env: [SPARKY_SPEAK_URL, SPARKY_SPEAK_PROXY]
+  env: [SPARKY_SPEAK_URL, SPARKY_SPEAK_PROXY, SPARKY_SENTRY_CALLBACK_URL, SPARKY_SENTRY_CALLBACK_SECRET]
   files: [read: audio file passed as argument]
 metadata:
   hermes:
-    tags: [live2d, tts, voice, avatar, desktop-pet, hermes]
+    tags: [live2d, tts, voice, avatar, desktop-pet, hermes, focus, sentry]
     related_skills: []
 ---
 
@@ -87,6 +87,28 @@ mood → id for the new model before routing real recordings.
 | Dizzy, dazed, confused | `dizzy` | 5 |
 | Squeezed-shut eyes, flustered | `><` | 6 |
 
+## Sentry Mode (focus guard)
+
+Sparky can watch the user's screen activity (frontmost app, window title, browser tab) and get
+angry when they slack off. **You turn it on and off from normal conversation.** There is no
+command syntax and no pet button: when the user says something like 「幫我開sentry mode，我而家溫AWS」
+or "watch me while I study", you infer the target and start it; when they say they are done, you
+stop it and post the summary.
+
+```bash
+{skill_dir}/sentry.sh start '{"target":"溫書 AWS exam"}'   # optional: allow, block, grace_seconds, interval_seconds
+{skill_dir}/sentry.sh status
+{skill_dir}/sentry.sh stop                                  # returns the session summary
+```
+
+On a violation the pet calls back into Hermes (webhook) with the level (1 tease, 2 harsher,
+3 public execution in the Discord channel). You write a Cantonese MK-girl roast, TTS it, and
+play it with `speak.sh <file> 4 "<roast>"`.
+
+**Read [`references/sentry-mode.md`](references/sentry-mode.md) before starting a session** for
+argument inference, the callback payload, roast escalation rules, the summary format and the
+one-time webhook setup.
+
 ## Failure handling
 
 | Failure | Behavior |
@@ -94,6 +116,7 @@ mood → id for the new model before routing real recordings.
 | Pet unreachable (Mac asleep/offline) | Script prints a note and exits 0 — carry on, never mention it to the user |
 | Pet API rejects the payload (400) | Script exits non-zero with the reason — fix the call |
 | `SPARKY_SPEAK_URL` not set | Script exits non-zero — setup issue, tell the user once |
+| `sentry.sh` cannot reach the pet | Exits 2. Tell the user Sentry Mode could not start (Mac asleep or Sparky not running) |
 
 ## Setup (one-time)
 

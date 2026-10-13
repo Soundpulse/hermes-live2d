@@ -215,6 +215,169 @@ curl -X POST http://127.0.0.1:3210/lipsync/stop
 
 ---
 
+### Sentry Mode
+
+Sentry Mode is a focus guard that an agent switches on and off. While a session runs, the pet
+samples the frontmost app, its window title and, for Safari, Chrome, Arc, Brave and Edge, the
+active tab URL and title every `interval_seconds` (via `osascript`; no screenshots). Each sample is
+classified as `allowed`, `blocked` or `unknown`. When the user stays on blocked content longer
+than `grace_seconds`, a violation fires: the pet switches to expression 4 (angry) and either POSTs
+the violation to `callback_url` or, if there is none or it fails, shows a Cantonese fallback roast
+in the speech bubble. When no session runs, nothing is monitored.
+
+**Classification rules** (first match wins):
+
+1. Request `block`
+2. Request `allow`
+3. Default block list: YouTube, Reddit, Instagram, TikTok, X/Twitter, Facebook, Threads, Twitch,
+   Netflix, Disney+, Bilibili, Xiaohongshu, 9GAG, Steam store/community, Epic Games, plus game and
+   streaming apps (Steam, Battle.net, League of Legends, Riot Client, Minecraft, Roblox, ...).
+4. Default allow list: GitHub, GitLab, Stack Overflow/Stack Exchange, AWS docs/console/Skill
+   Builder, Tutorials Dojo, Coursera, Udemy, edX, Notion, Google Docs/Drive, MDN, Microsoft Learn,
+   Python docs, Read the Docs, docs.rs, Wikipedia, arXiv, Overleaf, LeetCode, ChatGPT, Claude,
+   localhost, plus IDE/terminal/notes apps (VS Code, Cursor, Xcode, JetBrains IDEs, Zed, Terminal,
+   iTerm2, Warp, Ghostty, Notion, Obsidian, Anki, Preview, Office/iWork, ...).
+5. Anything else is `unknown`: neutral, never punished, but logged in the summary.
+
+List entries can be a domain (`reddit.com`, matches subdomains), a domain with a path prefix
+(`youtube.com/watch?v=abc`, `reddit.com/r/aws`) or a keyword / app name (`steam`, `aws`,
+`visual studio code`). Keywords match app names, single-word keywords also match a host label,
+and request keywords additionally match tab and window titles. For browser tabs the URL decides,
+never the browser's own app name. If a tab URL cannot be read, the tab title is used instead.
+
+**Escalation:** blocked time accumulates into a streak. Each time the streak gains another
+`grace_seconds` of blocked time, a violation fires with `level` = violation count in the session,
+capped at 3. Returning to allowed content resets the streak (not the level). Unknown content
+neither adds to nor resets the streak. Gaps between samples are capped at
+`max(3 x interval_seconds, 30)` seconds, so a sleeping Mac does not count as off-task time.
+
+#### POST /sentry/start
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `target` | string | yes | What the user is supposed to be doing, e.g. `"溫書 AWS exam"` (max 200 chars) |
+| `allow` | string[] | no | Extra on-task domains, paths, keywords or app names |
+| `block` | string[] | no | Extra distraction domains, paths, keywords or app names |
+| `grace_seconds` | number | no | Continuous blocked time before a violation (default `60`, max `3600`) |
+| `interval_seconds` | number | no | Sampling interval (default `10`, range `2` to `300`) |
+| `callback_url` | string | no | `http(s)` URL that receives violation events |
+| `callback_secret` | string | no | If set, callbacks are signed as a Hermes generic webhook V2 |
+
+Starting while a session runs replaces it; the old session's summary is returned as
+`previous_summary`.
+
+```bash
+curl -X POST http://127.0.0.1:3210/sentry/start \
+  -H 'Content-Type: application/json' \
+  -d '{"target": "溫書 AWS exam", "block": ["discord"], "grace_seconds": 60,
+       "callback_url": "https://hermes.my-tailnet.ts.net/webhooks/sparky-sentry"}'
+```
+
+**Response:** `{"ok": true, "message": "sentry started", "status": {...}, "previous_summary": null}`
+(`status` has the same shape as `GET /sentry/status`). Invalid input returns HTTP 400 with the
+common error format.
+
+#### POST /sentry/stop
+
+Stops the session and returns its summary. Calling it when nothing runs returns
+`{"ok": true, "active": false, "message": "sentry was not running", "summary": null}`.
+
+```json
+{
+  "ok": true,
+  "active": false,
+  "message": "sentry stopped",
+  "summary": {
+    "target": "溫書 AWS exam",
+    "started_at": "2026-10-13T08:00:00Z",
+    "ended_at": "2026-10-13T10:00:00Z",
+    "duration_seconds": 7200,
+    "focused_seconds": 6300,
+    "off_task_seconds": 540,
+    "unknown_seconds": 360,
+    "violations": 2,
+    "max_level": 2,
+    "violation_log": [
+      {"level": 1, "app": "Safari", "title": "r/aws", "url": "https://www.reddit.com/r/aws",
+       "reason": "default block: reddit.com", "off_task_seconds": 60,
+       "ts": "2026-10-13T08:41:00Z", "ts_unix": 1791880860}
+    ],
+    "events": [
+      {"label": "blocked", "app": "Safari", "title": "r/aws", "url": "https://www.reddit.com/r/aws",
+       "reason": "default block: reddit.com", "started_at": "2026-10-13T08:40:00Z",
+       "ended_at": "2026-10-13T08:45:00Z", "seconds": 300},
+      {"label": "unknown", "app": "Discord", "title": "#general", "url": null, "reason": null,
+       "started_at": "2026-10-13T09:10:00Z", "ended_at": "2026-10-13T09:12:00Z", "seconds": 120}
+    ],
+    "events_truncated": false
+  }
+}
+```
+
+`events` lists `blocked` and `unknown` stretches (consecutive samples of the same app and site are
+merged; capped at 500 entries). Timestamps are UTC.
+
+#### GET /sentry/status
+
+```json
+{
+  "ok": true,
+  "active": true,
+  "target": "溫書 AWS exam",
+  "started_at": "2026-10-13T08:00:00Z",
+  "elapsed_seconds": 1830,
+  "grace_seconds": 60,
+  "interval_seconds": 10,
+  "allow": [],
+  "block": ["discord"],
+  "callback": true,
+  "focused_seconds": 1700,
+  "off_task_seconds": 70,
+  "unknown_seconds": 60,
+  "streak_off_task_seconds": 0,
+  "violations": 1,
+  "level": 1,
+  "current": {"app": "Code", "title": "main.rs", "url": null, "label": "allowed",
+              "reason": "default allow: code"},
+  "last_sample_at": "2026-10-13T08:30:30Z",
+  "last_error": null
+}
+```
+
+When idle: `{"ok": true, "active": false}`. `last_error` reports the most recent probe or
+callback problem, e.g. a missing macOS Automation/Accessibility permission.
+
+#### Violation callback
+
+`POST <callback_url>` with `Content-Type: application/json` and
+`X-Request-ID: sparky-sentry-<session start unix>-<violation number>`:
+
+```json
+{
+  "type": "sentry_violation",
+  "event_type": "sentry_violation",
+  "level": 1,
+  "target": "溫書 AWS exam",
+  "app": "Google Chrome",
+  "title": "Funny cats - YouTube",
+  "url": "https://www.youtube.com/watch?v=abc",
+  "reason": "default block: youtube.com",
+  "off_task_seconds": 60,
+  "violations": 1,
+  "ts": "2026-10-13T08:30:00Z",
+  "ts_unix": 1791880200,
+  "session_started_at": "2026-10-13T08:00:00Z"
+}
+```
+
+With `callback_secret`, two more headers are sent: `X-Webhook-Timestamp: <unix seconds>` and
+`X-Webhook-Signature-V2: <hex HMAC-SHA256 of "<timestamp>.<raw body>">`, which a Hermes webhook
+route verifies natively. The request is made with the system `curl`, a 10 second timeout and no
+retries. A non-2xx response or network error triggers the local fallback roast and is reported
+in `last_error`.
+
+---
+
 ### GET /audio
 
 Local audio file proxy. Serves a local file over HTTP (used internally; you normally do not need to call it directly).

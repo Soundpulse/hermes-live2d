@@ -22,6 +22,7 @@
 
 - Health checks
 - Cron reminders
+- Keeping you off YouTube while you study (Sentry Mode)
 - Looking cute
 
 ---
@@ -130,6 +131,42 @@ asleep or offline.
 
 ---
 
+## Sentry Mode: your agent watches you study
+
+Tell your hermes agent, in plain conversation, that you want to focus. For example
+「幫我開sentry mode，我而家溫AWS」 or "watch me while I finish this PR". There is no command to
+type and no button on the pet: the agent understands the request, infers the target, and calls
+the pet's `POST /sentry/start` endpoint itself. When you say you are done, it calls
+`POST /sentry/stop` and posts a recap of the session in chat.
+
+While a session runs, the pet checks every 10 seconds which app is frontmost, its window title
+and, in Safari, Chrome, Arc, Brave or Edge, the active tab. Study and work sites (docs, GitHub,
+Stack Overflow, AWS docs, Coursera, Notion, Google Docs, your IDE and terminal) count as focused.
+Distractions (YouTube, Reddit, Instagram, TikTok, X, Facebook, Twitch, Netflix, Bilibili,
+Xiaohongshu, games) count as off-task. Anything else is neutral and simply logged. Stay on a
+distraction longer than the grace period (60 s by default) and Sparky gets angry: the agent
+receives a webhook, writes an escalating Cantonese roast, and plays it through the pet with the
+angry face. Level 3 earns a public roast in the Discord channel. Without an agent callback the
+pet shows a local roast bubble instead.
+
+```
+you: 幫我開sentry mode，我而家溫AWS
+agent ──► POST /sentry/start {"target": "溫AWS", "callback_url": ...} ──► Sparky starts watching
+           ... you open YouTube for over a minute ...
+Sparky ──► angry face + POST callback {"type": "sentry_violation", "level": 1, ...} ──► agent
+agent ──► text_to_speech roast ──► POST /speak (expression 4) ──► Sparky roasts you
+you: 溫完喇
+agent ──► POST /sentry/stop ──► summary (focus time, distractions) ──► recap in chat
+```
+
+Nothing is monitored unless a session is running. The pet indicator under Sparky shows
+`Sentry: <target>` while it is on. macOS will ask once for **Automation** permission (to read
+the browser tab and System Events) and window titles need **Accessibility** permission for
+Sparky. See the [Sentry Mode API](docs/API.md#sentry-mode) and the agent
+[playbook](skills/hermes-live2d-voice/references/sentry-mode.md).
+
+---
+
 ## Features
 
 - **Transparent desktop pet** — frameless, transparent, always-on-top; draggable and resizable
@@ -141,6 +178,7 @@ asleep or offline.
 - **Window memory** — remembers window position and size across launches
 - **System tray** — tray icon to lock/unlock and quit
 - **Calm idle** — breathing and blinking with subtle sway, so the pet does not fidget
+- **Sentry Mode** - agent-activated focus guard that roasts you for slacking off
 
 ## HTTP API at a glance
 
@@ -165,6 +203,20 @@ curl -X POST http://127.0.0.1:3210/bubble \
   -H 'Content-Type: application/json' \
   -d '{"text": "thinking...", "duration": 3000}'
 ```
+
+# Sentry Mode (normally called by your agent, not by hand)
+curl -X POST http://127.0.0.1:3210/sentry/start \
+  -H 'Content-Type: application/json' \
+  -d '{"target": "溫書 AWS exam", "block": ["discord"], "grace_seconds": 60}'
+curl http://127.0.0.1:3210/sentry/status
+curl -X POST http://127.0.0.1:3210/sentry/stop     # returns the session summary
+```
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /sentry/start` | Start watching. Body: `target` (required), `allow`, `block`, `grace_seconds` (60), `interval_seconds` (10), `callback_url`, `callback_secret` |
+| `POST /sentry/stop` | Stop and return a summary: duration, focused/off-task/unknown seconds, violations, distraction events with app/title/url/time |
+| `GET /sentry/status` | Whether a session runs, current app/tab and label, totals, level, last permission error |
 
 `/speak` also accepts inline audio as base64 (`audio_data` + `audio_format`) instead of an
 `audio_url` — that's how the remote hermes skill sends recordings across the network. Full
@@ -224,6 +276,11 @@ Any TTS engine that produces a supported audio file can drive
 - **Local, unauthenticated API** — the HTTP API listens on `127.0.0.1` with no auth; only expose
   it to trusted devices (e.g. a private tailnet), never the public internet.
 - **Mouse tracking via Tauri** — `cursor_position()` behavior can vary across macOS versions.
+- **Sentry Mode sees only the front window** - it reads the frontmost app, window title and the
+  active tab of Safari, Chrome, Arc, Brave and Edge. Firefox and other browsers are judged by
+  window title only, and it cannot tell whether you are actually looking at the screen. Window
+  titles and URLs are available to anyone who can reach the API, so keep it on your private
+  tailnet.
 
 ## License
 
