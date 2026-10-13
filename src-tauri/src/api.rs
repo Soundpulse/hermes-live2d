@@ -1,16 +1,19 @@
 use crate::config::SparkyConfig;
+use crate::sentry::core::{effective_api_token, sentry_access, API_TOKEN_ENV};
 use axum::{
     body::Body,
-    extract::{Path as AxumPath, Query, State},
-    http::{header, StatusCode},
+    extract::{Path as AxumPath, Query, Request, State},
+    http::{header, HeaderValue, Method, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 // ── Request types ────────────────────────────────────────────────
 
@@ -246,6 +249,85 @@ async fn lipsync_stop_handler(
     Ok(ApiResponse::success("lipsync stop event emitted"))
 }
 
+// ── Sentry Mode ─────────────────────────────────────────────────
+
+/// The shared token `/sentry/*` requires, if one is configured.
+#[derive(Clone, Default)]
+pub struct SentryAuth {
+    token: Option<Arc<str>>,
+}
+
+impl SentryAuth {
+    pub fn new(token: Option<String>) -> Self {
+        Self {
+            token: token.map(Arc::from),
+        }
+    }
+}
+
+fn sentry_denied(status: StatusCode, message: &str) -> Response {
+    let mut res = (
+        status,
+        Json(ApiResponse {
+            ok: false,
+            message: message.into(),
+        }),
+    )
+        .into_response();
+    if status == StatusCode::UNAUTHORIZED {
+        res.headers_mut()
+            .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+    }
+    res
+}
+
+/// Sentry endpoints expose live window titles and tab URLs. Before any
+/// handler runs, `sentry_access` refuses foreign browser origins (403) and
+/// requires `Authorization: Bearer <token>` matching `SPARKY_API_TOKEN` (or
+/// `api_token` in config.json), compared in constant time. Without a
+/// configured token the endpoints are disabled (503), so they are never open
+/// by default, and a missing `Origin` grants nothing on its own.
+async fn guard_sentry(State(auth): State<SentryAuth>, req: Request, next: Next) -> Response {
+    let headers = req.headers();
+    // A non UTF-8 Origin is still an Origin; "" never matches the pet's own.
+    let origin = headers
+        .get(header::ORIGIN)
+        .map(|v| v.to_str().unwrap_or(""));
+    let authorization = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+    let decision = sentry_access(
+        auth.token.as_deref(),
+        origin,
+        req.method() == Method::OPTIONS,
+        authorization,
+    );
+    match decision {
+        Ok(()) => next.run(req).await,
+        Err((code, message)) => sentry_denied(
+            StatusCode::from_u16(code).unwrap_or(StatusCode::FORBIDDEN),
+            message,
+        ),
+    }
+}
+
+async fn sentry_start_handler(
+    State(app): State<AppHandle>,
+    Json(payload): Json<crate::sentry::StartReq>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiResponse>)> {
+    crate::sentry::start(&app, payload)
+        .map(Json)
+        .map_err(ApiResponse::error)
+}
+
+async fn sentry_stop_handler(State(app): State<AppHandle>) -> Json<serde_json::Value> {
+    Json(crate::sentry::stop(&app))
+}
+
+async fn sentry_status_handler(State(app): State<AppHandle>) -> Json<serde_json::Value> {
+    Json(crate::sentry::status(&app))
+}
+
 // ── Audio file serving ──────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -330,7 +412,27 @@ async fn model_handler(AxumPath(path): AxumPath<String>) -> Response {
 
 // ── Router & Server ──────────────────────────────────────────────
 
-pub fn create_router(app_handle: AppHandle) -> Router {
+pub fn create_router(app_handle: AppHandle, sentry_auth: SentryAuth) -> Router {
+    // Sentry routes are mounted outside the permissive CORS layer. Only the
+    // pet's own webview origins get CORS headers; other origins are refused.
+    // The pet itself reads Sentry state through the `sentry_status` Tauri
+    // command, so it needs neither HTTP nor the token.
+    let sentry_cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _| {
+            origin
+                .to_str()
+                .map(crate::sentry::core::is_app_origin)
+                .unwrap_or(false)
+        }))
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
+    let sentry = Router::new()
+        .route("/sentry/start", post(sentry_start_handler))
+        .route("/sentry/stop", post(sentry_stop_handler))
+        .route("/sentry/status", get(sentry_status_handler))
+        .layer(sentry_cors)
+        .layer(middleware::from_fn_with_state(sentry_auth, guard_sentry));
+
     Router::new()
         .route("/status", get(status_handler))
         .route("/expressions", get(expressions_handler))
@@ -343,7 +445,30 @@ pub fn create_router(app_handle: AppHandle) -> Router {
         .route("/audio", get(audio_handler))
         .route("/model/{*path}", get(model_handler))
         .layer(CorsLayer::permissive())
+        .merge(sentry)
         .with_state(app_handle)
+}
+
+pub async fn start_server(app_handle: AppHandle, config: SparkyConfig) {
+    let port = config.api_port;
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let token = effective_api_token(
+        std::env::var(API_TOKEN_ENV).ok().as_deref(),
+        config.api_token.as_deref(),
+    );
+    if token.is_none() {
+        println!("Sentry Mode API disabled: set {API_TOKEN_ENV} or api_token in config.json");
+    }
+    let router = create_router(app_handle, SentryAuth::new(token));
+
+    println!("Sparky API server listening on http://{addr}");
+
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .expect("failed to bind Sparky API server");
+    axum::serve(listener, router)
+        .await
+        .expect("Sparky API server error");
 }
 
 #[cfg(test)]
@@ -433,19 +558,4 @@ mod tests {
         assert!(validate_expression(None, Some("squint")).is_err());
         assert!(validate_expression(Some(1), Some("angry")).is_err());
     }
-}
-
-pub async fn start_server(app_handle: AppHandle, config: SparkyConfig) {
-    let port = config.api_port;
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let router = create_router(app_handle);
-
-    println!("Sparky API server listening on http://{addr}");
-
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .expect("failed to bind Sparky API server");
-    axum::serve(listener, router)
-        .await
-        .expect("Sparky API server error");
 }

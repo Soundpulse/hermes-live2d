@@ -1,16 +1,16 @@
 ---
 name: hermes-live2d-voice
-description: "Use when generated TTS recordings should play through the Sparky Live2D desktop pet."
-version: 2.0.0
+description: "Use when TTS recordings should play on the Sparky Live2D pet, or the user wants focus monitoring (Sentry Mode)."
+version: 2.2.0
 platforms: [linux, macos]
 allowed-tools: [Bash]
 permissions:
   network: ["$SPARKY_SPEAK_URL"]
-  env: [SPARKY_SPEAK_URL, SPARKY_SPEAK_PROXY]
+  env: [SPARKY_SPEAK_URL, SPARKY_SPEAK_PROXY, SPARKY_API_TOKEN, SPARKY_SENTRY_CALLBACK_URL, SPARKY_SENTRY_CALLBACK_SECRET]
   files: [read: audio file passed as argument]
 metadata:
   hermes:
-    tags: [live2d, tts, voice, avatar, desktop-pet, hermes]
+    tags: [live2d, tts, voice, avatar, desktop-pet, hermes, focus, sentry]
     related_skills: []
 ---
 
@@ -87,6 +87,33 @@ mood → id for the new model before routing real recordings.
 | Dizzy, dazed, confused | `dizzy` | 5 |
 | Squeezed-shut eyes, flustered | `><` | 6 |
 
+## Sentry Mode (focus guard)
+
+Sparky can watch the user's screen activity (frontmost app, window title, browser tab) and get
+angry when they slack off. **You turn it on and off from normal conversation.** There is no
+command syntax and no pet button: when the user says something like "turn on sentry mode, I'm
+studying for AWS" or "watch me while I study", you infer the target and start it; when they say
+they are done ("I'm done"), you stop it and post the summary.
+
+```bash
+{skill_dir}/sentry.sh start '{"target":"study for AWS exam","context":{"platform":"discord","chat_id":"123"}}'   # optional: allow, block, grace_seconds, interval_seconds
+{skill_dir}/sentry.sh status
+{skill_dir}/sentry.sh stop                                       # returns the session summary
+```
+
+Always pass `context` with the platform and chat id of the conversation that started the
+session; the pet echoes it back in every callback. On a violation the pet calls back into Hermes
+(webhook) with the level (1 tease, 2 harsher, 3 public callout, delivered only to the chat in
+`context`; ask the user before posting it anywhere else). You write the roast in the user's
+language and your persona's voice, TTS it, and play it with `speak.sh <file> 4 "<roast>"`.
+
+`sentry.sh` needs `SPARKY_API_TOKEN` (the same value as `api_token` in the Mac's
+`~/.sparky/config.json`); the pet refuses `/sentry/*` without it.
+
+**Read [`references/sentry-mode.md`](references/sentry-mode.md) before starting a session** for
+argument inference, the callback payload, roast escalation rules, the summary format and the
+one-time webhook setup.
+
 ## Failure handling
 
 | Failure | Behavior |
@@ -94,6 +121,8 @@ mood → id for the new model before routing real recordings.
 | Pet unreachable (Mac asleep/offline) | Script prints a note and exits 0 — carry on, never mention it to the user |
 | Pet API rejects the payload (400) | Script exits non-zero with the reason — fix the call |
 | `SPARKY_SPEAK_URL` not set | Script exits non-zero — setup issue, tell the user once |
+| `sentry.sh` cannot reach the pet | Exits 2. Tell the user Sentry Mode could not start (Mac asleep or Sparky not running) |
+| `sentry.sh` gets 401/503 or `SPARKY_API_TOKEN is not set` | Exits 1. Token missing or mismatched between the agent host and the Mac; tell the user once |
 
 ## Setup (one-time)
 
@@ -109,6 +138,7 @@ behind **userspace Tailscale**, also set an HTTP proxy so the script can reach t
 ```bash
 export SPARKY_SPEAK_URL="https://<mac-name>.<tailnet>.ts.net"
 export SPARKY_SPEAK_PROXY="http://127.0.0.1:1056/"   # only when using userspace Tailscale
+export SPARKY_API_TOKEN="<same as api_token on the Mac>"   # Sentry Mode only
 ```
 
 When those variables are missing from the live process environment, `speak.sh` falls back to

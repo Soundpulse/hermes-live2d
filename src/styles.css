@@ -76,3 +76,57 @@ html, body {
   opacity: 0;
   pointer-events: none;
 }
+
+/* Sentry Mode indicator, positioned under the model from main.ts
+   (positionSentryIndicator). Shown only while a session runs. */
+.sentry {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 70%;
+  padding: 3px 10px;
+  background: rgba(20, 24, 33, 0.78);
+  border-radius: 999px;
+  font-family: "Hiragino Sans", "PingFang SC", sans-serif;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #f2f4f8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 8000;
+  pointer-events: none;
+  transition: opacity 0.3s, background 0.3s;
+}
+
+.sentry.hidden {
+  opacity: 0;
+}
+
+.sentry-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3ddc84;
+}
+
+.sentry.level-1 .sentry-dot { background: #ffcc00; }
+.sentry.level-2 .sentry-dot { background: #ff8800; }
+.sentry.level-3 .sentry-dot { background: #ff3b30; }
+
+/* Brief red flash when a violation fires. */
+.sentry.alert {
+  background: rgba(200, 30, 30, 0.9);
+  animation: sentry-shake 0.4s ease-in-out 3;
+}
+
+@keyframes sentry-shake {
+  0%, 100% { transform: translateX(-50%); }
+  25% { transform: translateX(calc(-50% - 4px)); }
+  75% { transform: translateX(calc(-50% + 4px)); }
+}

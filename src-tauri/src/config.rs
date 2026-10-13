@@ -7,6 +7,11 @@ pub struct SparkyConfig {
     pub api_port: u16,
     #[serde(default)]
     pub model_dir: Option<String>,
+    /// Shared token that `/sentry/*` requires as `Authorization: Bearer`.
+    /// `SPARKY_API_TOKEN` in the environment overrides it. With neither set,
+    /// the Sentry endpoints are disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_token: Option<String>,
 }
 
 fn default_api_port() -> u16 {
@@ -18,6 +23,7 @@ impl Default for SparkyConfig {
         Self {
             api_port: default_api_port(),
             model_dir: None,
+            api_token: None,
         }
     }
 }

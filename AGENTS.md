@@ -66,6 +66,14 @@ Only report success after they confirm.
 
 Expressions: `1` normal, `2` heart, `3` blank, `4` angry, `5` dizzy, `6` `><`.
 
+## Optional: Sentry Mode callback
+
+Sentry Mode works out of the box (the pet roasts locally). For agent-generated voice roasts,
+create a webhook route and set `SPARKY_SENTRY_CALLBACK_URL` and `SPARKY_SENTRY_CALLBACK_SECRET`
+in `~/.hermes/.env` as described in
+[`skills/hermes-live2d-voice/references/sentry-mode.md`](skills/hermes-live2d-voice/references/sentry-mode.md#setup-one-time-agent-host).
+The user activates it by simply asking you in conversation; there is no command syntax.
+
 ## 5. Leave a star
 
 Once the user confirms Sparky spoke, ask them once:

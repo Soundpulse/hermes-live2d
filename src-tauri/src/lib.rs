@@ -1,5 +1,6 @@
 mod api;
 mod config;
+mod sentry;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
@@ -26,6 +27,13 @@ fn get_cursor_position(window: tauri::WebviewWindow) -> Result<(f64, f64), Strin
         (cursor.x - win_pos.x as f64) / scale,
         (cursor.y - win_pos.y as f64) / scale,
     ))
+}
+
+/// Current Sentry Mode state for the pet's own indicator. The webview reads it
+/// through IPC, so it never needs the HTTP API token.
+#[tauri::command]
+fn sentry_status(app: AppHandle) -> serde_json::Value {
+    sentry::status(&app)
 }
 
 fn apply_lock_state(app_handle: &AppHandle, locked: bool) {
@@ -81,6 +89,9 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // Sentry Mode session state, shared with the HTTP API handlers.
+            app.manage(sentry::SentryState::default());
+
             let cfg = config::load_config();
             println!("Sparky config dir: {}", config::sparky_dir().display());
 
@@ -110,7 +121,11 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![start_drag, get_cursor_position])
+        .invoke_handler(tauri::generate_handler![
+            start_drag,
+            get_cursor_position,
+            sentry_status
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -122,7 +122,9 @@ async function loadModel() {
     window.addEventListener("resize", () => {
       if (currentModel) repositionModel(currentModel);
       if (!bubbleEl.classList.contains("hidden")) positionBubble();
+      positionSentryIndicator();
     });
+    positionSentryIndicator();
   } catch (e: any) {
     console.error("Failed to load model:", e);
   }
@@ -456,3 +458,88 @@ listen("api:speak", (event: any) => {
     showBubble(text, duration);
   }
 });
+
+// --- Sentry Mode indicator ---
+// Sentry Mode is started and stopped by the agent over the HTTP API
+// (/sentry/start, /sentry/stop); the pet only displays its state.
+type SentryState = {
+  active: boolean;
+  target: string | null;
+  level: number;
+  violations: number;
+};
+
+const sentryEl = document.getElementById("sentry-indicator")!;
+const sentryText = document.getElementById("sentry-text")!;
+let sentryAlertTimer: number | null = null;
+
+// Gap (px) between the model's rendered bottom edge and the indicator.
+const SENTRY_GAP = 6;
+// Minimum gap (px) between the indicator and the window's left/right edges.
+const SENTRY_EDGE = 8;
+
+function positionSentryIndicator() {
+  if (!currentModel) return;
+  const bottom = currentModel.y + currentModel.height / 2;
+  const top = Math.min(bottom + SENTRY_GAP, window.innerHeight - 28);
+  sentryEl.style.top = `${Math.max(8, top)}px`;
+  // The indicator is centered on `left` (translateX(-50%) in CSS). Keep it
+  // under the model when it fits, otherwise clamp it inside the window using
+  // its rendered width.
+  const half = sentryEl.offsetWidth / 2;
+  const minCenter = SENTRY_EDGE + half;
+  const maxCenter = window.innerWidth - SENTRY_EDGE - half;
+  const center =
+    minCenter > maxCenter
+      ? window.innerWidth / 2
+      : Math.min(Math.max(currentModel.x, minCenter), maxCenter);
+  sentryEl.style.left = `${center}px`;
+}
+
+function renderSentry(state: SentryState) {
+  sentryEl.classList.remove("level-1", "level-2", "level-3");
+  if (!state.active) {
+    sentryEl.classList.add("hidden");
+    sentryEl.classList.remove("alert");
+    return;
+  }
+  const level = Math.max(0, Math.min(3, state.level || 0));
+  if (level > 0) sentryEl.classList.add(`level-${level}`);
+  sentryText.textContent = `Sentry: ${state.target ?? ""}`;
+  positionSentryIndicator();
+  sentryEl.classList.remove("hidden");
+}
+
+// Set once a sentry:state event arrives. The startup status fetch below is
+// older than any event, so its result is dropped after that point.
+let sentryEventSeen = false;
+
+listen<SentryState>("sentry:state", (event) => {
+  sentryEventSeen = true;
+  renderSentry(event.payload);
+});
+
+listen("sentry:violation", () => {
+  if (sentryAlertTimer) clearTimeout(sentryAlertTimer);
+  sentryEl.classList.add("alert");
+  sentryAlertTimer = window.setTimeout(() => {
+    sentryEl.classList.remove("alert");
+    sentryAlertTimer = null;
+  }, 4000);
+});
+
+// Restore the indicator after a webview reload while a session is running.
+// Read over IPC: the HTTP /sentry/* endpoints need the agent's API token.
+invoke<Partial<SentryState>>("sentry_status")
+  .then((s) => {
+    if (sentryEventSeen) return; // a newer event already rendered the state
+    renderSentry({
+      active: !!s.active,
+      target: s.target ?? null,
+      level: s.level ?? 0,
+      violations: s.violations ?? 0,
+    });
+  })
+  .catch(() => {
+    // State not ready yet; the next sentry:state event will update the indicator.
+  });
