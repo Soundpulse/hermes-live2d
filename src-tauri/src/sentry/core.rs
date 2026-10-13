@@ -154,6 +154,27 @@ pub fn is_browser(app: &str) -> bool {
     BROWSERS.iter().any(|b| b.eq_ignore_ascii_case(app))
 }
 
+/// Browsers whose tab URL cannot be read through AppleScript. They are judged
+/// by window title only, never by their own app name.
+pub const TITLE_ONLY_BROWSERS: &[&str] = &[
+    "Firefox",
+    "Firefox Developer Edition",
+    "Firefox Nightly",
+    "LibreWolf",
+    "Zen",
+    "Zen Browser",
+    "Opera",
+    "Opera GX",
+    "Vivaldi",
+    "Orion",
+];
+
+pub fn is_title_only_browser(app: &str) -> bool {
+    TITLE_ONLY_BROWSERS
+        .iter()
+        .any(|b| b.eq_ignore_ascii_case(app.trim()))
+}
+
 // ── Samples and labels ──────────────────────────────────────────
 
 /// One observation of what the user is looking at.
@@ -383,8 +404,13 @@ impl Classifier {
     }
 
     pub fn classify(&self, sample: &Sample) -> Classification {
-        let browser = is_browser(&sample.app);
-        let url = sample.url.as_deref().and_then(split_url);
+        let browser = is_browser(&sample.app) || is_title_only_browser(&sample.app);
+        // Title-only browsers never have a trustworthy URL, so always use the title.
+        let url = if is_title_only_browser(&sample.app) {
+            None
+        } else {
+            sample.url.as_deref().and_then(split_url)
+        };
         let title = sample.title.as_deref().unwrap_or("");
 
         for set in &self.rules {
@@ -403,7 +429,8 @@ impl Classifier {
                                 && matches!(p, Pattern::Keyword { .. })
                                 && p.matches_title(title))
                     }),
-                    // No URL (permission denied, Firefox, empty tab): fall back to the title.
+                    // No URL (permission denied, title-only browser such as Firefox,
+                    // empty tab): fall back to the title.
                     None => set.web.iter().find(|p| p.matches_title(title)),
                 }
             } else {
@@ -1055,6 +1082,37 @@ mod tests {
         // Short stems like `x` are never matched against titles.
         s.title = Some("x marks the spot".into());
         assert_eq!(c.classify(&s).label, Label::Unknown);
+    }
+
+    #[test]
+    fn title_only_browsers_are_judged_by_title() {
+        let c = defaults();
+        for app in ["Firefox", "firefox", "Zen", "Vivaldi", "Opera"] {
+            let r = c.classify(&native(app, "Funny cats - YouTube"));
+            assert_eq!(r.label, Label::Blocked, "{app}");
+            assert_eq!(r.reason.as_deref(), Some("default block: youtube.com"));
+        }
+        // The browser's own app name never decides, even against a request allow.
+        let c = Classifier::new(&["firefox"], &[]);
+        assert_eq!(
+            c.classify(&native("Firefox", "Funny cats - YouTube")).label,
+            Label::Blocked
+        );
+        // Request keywords still match the title.
+        let c = Classifier::new(&["aws"], &[]);
+        assert_eq!(
+            c.classify(&native("Firefox", "AWS SAA practice exam - YouTube"))
+                .label,
+            Label::Allowed
+        );
+        // Unlisted titles stay neutral.
+        assert_eq!(
+            defaults().classify(&native("Firefox", "Hacker News")).label,
+            Label::Unknown
+        );
+        // `is_browser` (used by the probe for AppleScript tab reads) is unchanged.
+        assert!(!is_browser("Firefox"));
+        assert!(is_title_only_browser("FIREFOX"));
     }
 
     #[test]
