@@ -10,9 +10,10 @@ pub mod core;
 mod probe;
 
 use self::core::{
-    fallback_roast, rfc3339, sign_webhook_v2, validate_callback_url, Classifier, Engine,
-    SessionConfig, SessionSummary, Violation, DEFAULT_GRACE_SECONDS, DEFAULT_INTERVAL_SECONDS,
-    MAX_GRACE_SECONDS, MAX_INTERVAL_SECONDS, MIN_INTERVAL_SECONDS,
+    fallback_roast, rfc3339, sign_webhook_v2, validate_callback_url, validate_context,
+    violation_payload, Classifier, Engine, SessionConfig, SessionSummary, Violation,
+    DEFAULT_GRACE_SECONDS, DEFAULT_INTERVAL_SECONDS, MAX_GRACE_SECONDS, MAX_INTERVAL_SECONDS,
+    MIN_INTERVAL_SECONDS,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -41,6 +42,11 @@ pub struct StartReq {
     /// generic webhook V2 (`X-Webhook-Timestamp` + `X-Webhook-Signature-V2`).
     #[serde(default)]
     pub callback_secret: Option<String>,
+    /// Optional opaque JSON object or string (max 2 KB), echoed unchanged in
+    /// status, the stop summary and every violation callback. Agents put the
+    /// originating platform and chat here so reactions go back to that chat.
+    #[serde(default)]
+    pub context: Option<Value>,
 }
 
 struct Session {
@@ -117,6 +123,7 @@ fn status_json(s: &Session, now: u64) -> Value {
         "current": current,
         "last_sample_at": s.last_sample_unix.map(rfc3339),
         "last_error": s.last_error,
+        "context": e.config.context,
     })
 }
 
@@ -152,6 +159,7 @@ pub fn start(app: &AppHandle, req: StartReq) -> Result<Value, String> {
         validate_callback_url(url)?;
     }
     let callback_secret = req.callback_secret.filter(|s| !s.is_empty());
+    let context = validate_context(req.context)?;
 
     let allow = clean_list(req.allow);
     let block = clean_list(req.block);
@@ -161,6 +169,7 @@ pub fn start(app: &AppHandle, req: StartReq) -> Result<Value, String> {
             target: target.clone(),
             grace_seconds: grace,
             interval_seconds: interval,
+            context,
         },
         Classifier::new(&allow, &block),
         now,
@@ -273,6 +282,7 @@ struct ViolationJob {
     session_started: u64,
     callback_url: Option<String>,
     callback_secret: Option<String>,
+    context: Option<Value>,
 }
 
 async fn run_loop(app: AppHandle, id: u64, interval: u64) {
@@ -299,6 +309,7 @@ async fn run_loop(app: AppHandle, id: u64, interval: u64) {
                 session_started: session.engine.started_unix(),
                 callback_url: session.callback_url.clone(),
                 callback_secret: session.callback_secret.clone(),
+                context: session.engine.config.context.clone(),
             })
         };
 
@@ -333,21 +344,13 @@ async fn handle_violation(app: AppHandle, id: u64, job: ViolationJob) {
 
     let delivered = match &job.callback_url {
         Some(url) => {
-            let payload = json!({
-                "type": "sentry_violation",
-                "event_type": "sentry_violation",
-                "level": v.level,
-                "target": job.target,
-                "app": v.app,
-                "title": v.title,
-                "url": v.url,
-                "reason": v.reason,
-                "off_task_seconds": v.off_task_seconds,
-                "violations": job.violations,
-                "ts": v.ts,
-                "ts_unix": v.ts_unix,
-                "session_started_at": rfc3339(job.session_started),
-            });
+            let payload = violation_payload(
+                v,
+                &job.target,
+                job.violations,
+                job.session_started,
+                job.context.as_ref(),
+            );
             let request_id = format!("sparky-sentry-{}-{}", job.session_started, job.violations);
             match post_callback(url, job.callback_secret.as_deref(), &payload, &request_id).await {
                 Ok(()) => true,

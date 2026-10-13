@@ -3,6 +3,7 @@
 //! network or the OS, so it is fully unit tested.
 
 use serde::Serialize;
+use serde_json::{json, Value};
 
 // ── Defaults ────────────────────────────────────────────────────
 
@@ -510,6 +511,8 @@ pub struct SessionSummary {
     pub violation_log: Vec<Violation>,
     pub events: Vec<DistractionEvent>,
     pub events_truncated: bool,
+    /// The opaque `context` given to `POST /sentry/start`, echoed unchanged.
+    pub context: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -517,6 +520,8 @@ pub struct SessionConfig {
     pub target: String,
     pub grace_seconds: u64,
     pub interval_seconds: u64,
+    /// Opaque caller data (e.g. the originating chat), see `validate_context`.
+    pub context: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -712,6 +717,7 @@ impl Engine {
             violation_log: engine.violations.clone(),
             events: engine.events,
             events_truncated: engine.events_truncated,
+            context: engine.config.context.clone(),
         }
     }
 }
@@ -859,6 +865,150 @@ pub fn is_app_origin(origin: &str) -> bool {
         .any(|o| o.eq_ignore_ascii_case(origin.trim()))
 }
 
+// ── Session context ─────────────────────────────────────────────
+
+/// Maximum serialized size of the `context` field of `POST /sentry/start`.
+pub const MAX_CONTEXT_BYTES: usize = 2048;
+
+/// Validate the optional opaque `context` of `POST /sentry/start`. It must be
+/// a JSON object or string of at most `MAX_CONTEXT_BYTES` bytes when
+/// serialized. `null` means no context. The value is never interpreted, only
+/// echoed back in status, summary and every violation callback.
+pub fn validate_context(context: Option<Value>) -> Result<Option<Value>, String> {
+    match context {
+        None | Some(Value::Null) => Ok(None),
+        Some(v @ (Value::Object(_) | Value::String(_))) => {
+            if v.to_string().len() > MAX_CONTEXT_BYTES {
+                Err(format!(
+                    "context must be at most {MAX_CONTEXT_BYTES} bytes as JSON"
+                ))
+            } else {
+                Ok(Some(v))
+            }
+        }
+        Some(_) => Err("context must be a JSON object or string".into()),
+    }
+}
+
+/// Body of the violation callback POST. `context` is echoed unchanged so the
+/// agent can route the reaction back to the chat that started the session.
+pub fn violation_payload(
+    v: &Violation,
+    target: &str,
+    violations: u32,
+    session_started_unix: u64,
+    context: Option<&Value>,
+) -> Value {
+    json!({
+        "type": "sentry_violation",
+        "event_type": "sentry_violation",
+        "level": v.level,
+        "target": target,
+        "app": v.app,
+        "title": v.title,
+        "url": v.url,
+        "reason": v.reason,
+        "off_task_seconds": v.off_task_seconds,
+        "violations": violations,
+        "ts": v.ts,
+        "ts_unix": v.ts_unix,
+        "session_started_at": rfc3339(session_started_unix),
+        "context": context,
+    })
+}
+
+// ── API token ───────────────────────────────────────────────────
+
+/// Environment variable holding the shared token for `/sentry/*`.
+pub const API_TOKEN_ENV: &str = "SPARKY_API_TOKEN";
+
+/// The token `/sentry/*` requires: the environment value wins over the
+/// config file value; blank values count as unset.
+pub fn effective_api_token(env: Option<&str>, config: Option<&str>) -> Option<String> {
+    [env, config]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|t| !t.is_empty())
+        .map(str::to_string)
+}
+
+/// Outcome of checking a request's `Authorization` header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenCheck {
+    /// The bearer token matches.
+    Ok,
+    /// No token is configured, so `/sentry/*` is disabled.
+    NotConfigured,
+    /// The request has no usable `Authorization: Bearer` header.
+    Missing,
+    /// A bearer token was sent but does not match.
+    Invalid,
+}
+
+/// Compare two secrets in constant time. Both sides are hashed first, so the
+/// comparison time does not depend on where they differ or on their lengths.
+pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    use sha2::{Digest, Sha256};
+    let (ha, hb) = (Sha256::digest(a), Sha256::digest(b));
+    ha.iter()
+        .zip(hb.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
+}
+
+/// Check `Authorization: Bearer <token>` against the configured token.
+pub fn check_bearer(expected: Option<&str>, authorization: Option<&str>) -> TokenCheck {
+    let Some(expected) = expected.filter(|t| !t.is_empty()) else {
+        return TokenCheck::NotConfigured;
+    };
+    let presented = authorization
+        .map(str::trim)
+        .and_then(|h| h.split_once(' '))
+        .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
+        .map(|(_, token)| token.trim())
+        .filter(|t| !t.is_empty());
+    match presented {
+        None => TokenCheck::Missing,
+        Some(token) if constant_time_eq(token.as_bytes(), expected.as_bytes()) => TokenCheck::Ok,
+        Some(_) => TokenCheck::Invalid,
+    }
+}
+
+/// Decide whether a `/sentry/*` request may reach its handler. On refusal
+/// returns the HTTP status code and the error message. Order: a foreign
+/// browser `Origin` is refused first (403); a CORS preflight (`OPTIONS`)
+/// then passes, since it carries no credentials and the real request is
+/// still checked; everything else needs the bearer token (503 when no token
+/// is configured, 401 when it is missing or wrong).
+pub fn sentry_access(
+    token: Option<&str>,
+    origin: Option<&str>,
+    is_preflight: bool,
+    authorization: Option<&str>,
+) -> Result<(), (u16, &'static str)> {
+    if let Some(origin) = origin {
+        if !is_app_origin(origin) {
+            return Err((403, "sentry endpoints are not available to browser pages"));
+        }
+    }
+    if is_preflight {
+        return Ok(());
+    }
+    match check_bearer(token, authorization) {
+        TokenCheck::Ok => Ok(()),
+        TokenCheck::NotConfigured => Err((
+            503,
+            "sentry endpoints are disabled: set SPARKY_API_TOKEN or api_token in ~/.sparky/config.json and restart Sparky",
+        )),
+        TokenCheck::Missing => Err((
+            401,
+            "sentry endpoints need an Authorization: Bearer <SPARKY_API_TOKEN> header",
+        )),
+        TokenCheck::Invalid => Err((401, "invalid API token")),
+    }
+}
+
 // ── Tests ───────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -891,6 +1041,7 @@ mod tests {
                 target: "study for AWS exam".into(),
                 grace_seconds: grace,
                 interval_seconds: interval,
+                context: None,
             },
             Classifier::new(allow, block),
             1_000,
@@ -1389,5 +1540,170 @@ mod tests {
         for level in 0..=4 {
             assert!(fallback_roast(level, "x").is_ascii());
         }
+    }
+
+    #[test]
+    fn context_accepts_object_string_and_null() {
+        assert_eq!(validate_context(None).unwrap(), None);
+        assert_eq!(validate_context(Some(Value::Null)).unwrap(), None);
+        let obj = json!({"platform": "discord", "chat_id": "123", "thread_id": null});
+        assert_eq!(validate_context(Some(obj.clone())).unwrap(), Some(obj));
+        let s = json!("discord:123");
+        assert_eq!(validate_context(Some(s.clone())).unwrap(), Some(s));
+        for bad in [json!(1), json!(true), json!([1, 2])] {
+            assert!(validate_context(Some(bad)).is_err());
+        }
+    }
+
+    #[test]
+    fn context_size_limit() {
+        // A JSON string serializes with two quote characters.
+        let fits = Value::String("a".repeat(MAX_CONTEXT_BYTES - 2));
+        assert!(validate_context(Some(fits)).is_ok());
+        let over = Value::String("a".repeat(MAX_CONTEXT_BYTES - 1));
+        assert!(validate_context(Some(over)).is_err());
+        let big_obj = json!({ "chat_id": "x".repeat(MAX_CONTEXT_BYTES) });
+        assert!(validate_context(Some(big_obj)).is_err());
+    }
+
+    #[test]
+    fn context_is_echoed_in_summary_and_callback() {
+        let ctx = json!({"platform": "telegram", "chat_id": "-100123", "thread_id": "7"});
+        let mut e = Engine::new(
+            SessionConfig {
+                target: "study for AWS exam".into(),
+                grace_seconds: 60,
+                interval_seconds: 10,
+                context: Some(ctx.clone()),
+            },
+            Classifier::new::<&str>(&[], &[]),
+            1_000,
+        );
+        e.ingest(web("Safari", "https://github.com", "repo"), 1_000);
+        assert_eq!(e.summary(1_010).context, Some(ctx.clone()));
+        let summary = serde_json::to_value(e.summary(1_010)).unwrap();
+        assert_eq!(summary["context"], ctx);
+
+        let v = Violation {
+            level: 3,
+            app: "Safari".into(),
+            title: Some("cats".into()),
+            url: Some("https://www.youtube.com/watch?v=abc".into()),
+            reason: Some("default block: youtube.com".into()),
+            off_task_seconds: 180,
+            ts: rfc3339(1_200),
+            ts_unix: 1_200,
+        };
+        let payload = violation_payload(&v, "study for AWS exam", 3, 1_000, Some(&ctx));
+        assert_eq!(payload["context"], ctx);
+        assert_eq!(payload["level"], 3);
+        assert_eq!(payload["session_started_at"], rfc3339(1_000));
+        let none = violation_payload(&v, "study for AWS exam", 3, 1_000, None);
+        assert_eq!(none["context"], Value::Null);
+    }
+
+    #[test]
+    fn api_token_env_wins_and_blank_is_unset() {
+        assert_eq!(effective_api_token(None, None), None);
+        assert_eq!(effective_api_token(Some("  "), Some("")), None);
+        assert_eq!(
+            effective_api_token(Some("env"), Some("cfg")).as_deref(),
+            Some("env")
+        );
+        assert_eq!(
+            effective_api_token(Some(""), Some(" cfg ")).as_deref(),
+            Some("cfg")
+        );
+        assert_eq!(
+            effective_api_token(None, Some("cfg")).as_deref(),
+            Some("cfg")
+        );
+    }
+
+    #[test]
+    fn bearer_token_check() {
+        let t = Some("s3cret-token");
+        assert_eq!(
+            check_bearer(None, Some("Bearer s3cret-token")),
+            TokenCheck::NotConfigured
+        );
+        assert_eq!(check_bearer(Some(""), None), TokenCheck::NotConfigured);
+        assert_eq!(check_bearer(t, Some("Bearer s3cret-token")), TokenCheck::Ok);
+        assert_eq!(
+            check_bearer(t, Some("bearer  s3cret-token ")),
+            TokenCheck::Ok
+        );
+        assert_eq!(check_bearer(t, None), TokenCheck::Missing);
+        assert_eq!(check_bearer(t, Some("")), TokenCheck::Missing);
+        assert_eq!(check_bearer(t, Some("Bearer ")), TokenCheck::Missing);
+        assert_eq!(
+            check_bearer(t, Some("Basic czNjcmV0LXRva2Vu")),
+            TokenCheck::Missing
+        );
+        assert_eq!(check_bearer(t, Some("s3cret-token")), TokenCheck::Missing);
+        assert_eq!(check_bearer(t, Some("Bearer wrong")), TokenCheck::Invalid);
+        assert_eq!(
+            check_bearer(t, Some("Bearer s3cret-token-extra")),
+            TokenCheck::Invalid
+        );
+        assert_eq!(
+            check_bearer(t, Some("Bearer S3CRET-TOKEN")),
+            TokenCheck::Invalid
+        );
+    }
+
+    #[test]
+    fn sentry_access_requires_token_and_blocks_foreign_origins() {
+        let t = Some("tok");
+        let ok = Some("Bearer tok");
+        // Agent request (no Origin) with the right token.
+        assert_eq!(sentry_access(t, None, false, ok), Ok(()));
+        // A missing Origin alone is not enough.
+        assert_eq!(sentry_access(t, None, false, None).unwrap_err().0, 401);
+        assert_eq!(
+            sentry_access(t, None, false, Some("Bearer nope")).unwrap_err(),
+            (401, "invalid API token")
+        );
+        // Never open by default: no configured token disables everything.
+        assert_eq!(sentry_access(None, None, false, ok).unwrap_err().0, 503);
+        assert_eq!(sentry_access(None, None, false, None).unwrap_err().0, 503);
+        // Foreign browser origins are refused even with the token.
+        assert_eq!(
+            sentry_access(t, Some("https://evil.example"), false, ok)
+                .unwrap_err()
+                .0,
+            403
+        );
+        assert_eq!(
+            sentry_access(t, Some("https://evil.example"), true, None)
+                .unwrap_err()
+                .0,
+            403
+        );
+        // The pet's own origin still needs the token for real requests.
+        assert_eq!(
+            sentry_access(t, Some("tauri://localhost"), false, ok),
+            Ok(())
+        );
+        assert_eq!(
+            sentry_access(t, Some("tauri://localhost"), false, None)
+                .unwrap_err()
+                .0,
+            401
+        );
+        // Preflight from the pet's origin passes without credentials.
+        assert_eq!(
+            sentry_access(t, Some("tauri://localhost"), true, None),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn constant_time_eq_compares_exactly() {
+        assert!(constant_time_eq(b"abc", b"abc"));
+        assert!(!constant_time_eq(b"abc", b"abd"));
+        assert!(!constant_time_eq(b"abc", b"abcd"));
+        assert!(!constant_time_eq(b"", b"a"));
+        assert!(constant_time_eq(b"", b""));
     }
 }

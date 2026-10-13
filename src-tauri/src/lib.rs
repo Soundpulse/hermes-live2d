@@ -29,6 +29,13 @@ fn get_cursor_position(window: tauri::WebviewWindow) -> Result<(f64, f64), Strin
     ))
 }
 
+/// Current Sentry Mode state for the pet's own indicator. The webview reads it
+/// through IPC, so it never needs the HTTP API token.
+#[tauri::command]
+fn sentry_status(app: AppHandle) -> serde_json::Value {
+    sentry::status(&app)
+}
+
 fn apply_lock_state(app_handle: &AppHandle, locked: bool) {
     LOCKED.store(locked, Ordering::SeqCst);
 
@@ -114,7 +121,11 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![start_drag, get_cursor_position])
+        .invoke_handler(tauri::generate_handler![
+            start_drag,
+            get_cursor_position,
+            sentry_status
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

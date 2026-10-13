@@ -160,6 +160,17 @@ you: I'm done
 agent ──► POST /sentry/stop ──► summary (focus time, distractions) ──► recap in chat
 ```
 
+**Sentry Mode needs a shared token.** The `/sentry/*` endpoints return HTTP 503 until a token is
+configured, so they are never open by default. Pick a long random value (e.g.
+`openssl rand -hex 32`) and set it on both sides:
+
+- **Mac:** add `"api_token": "<token>"` to `~/.sparky/config.json` (or launch Sparky with
+  `SPARKY_API_TOKEN=<token>` in its environment, which wins over the file), then restart Sparky.
+- **Agent host:** `echo 'SPARKY_API_TOKEN=<token>' >> ~/.hermes/.env` and restart the gateway.
+  `sentry.sh` sends it as `Authorization: Bearer <token>`.
+
+The pet's own indicator reads Sentry state over Tauri IPC and needs no token.
+
 Nothing is monitored unless a session is running. The pet indicator under Sparky shows
 `Sentry: <target>` while it is on. macOS will ask once for **Automation** permission (to read
 the browser tab and System Events) and window titles need **Accessibility** permission for
@@ -204,17 +215,18 @@ curl -X POST http://127.0.0.1:3210/bubble \
   -H 'Content-Type: application/json' \
   -d '{"text": "thinking...", "duration": 3000}'
 
-# Sentry Mode (normally called by your agent, not by hand)
-curl -X POST http://127.0.0.1:3210/sentry/start \
+# Sentry Mode (normally called by your agent, not by hand; needs SPARKY_API_TOKEN)
+AUTH="Authorization: Bearer $SPARKY_API_TOKEN"
+curl -X POST http://127.0.0.1:3210/sentry/start -H "$AUTH" \
   -H 'Content-Type: application/json' \
   -d '{"target": "study for AWS exam", "block": ["discord"], "grace_seconds": 60}'
-curl http://127.0.0.1:3210/sentry/status
-curl -X POST http://127.0.0.1:3210/sentry/stop     # returns the session summary
+curl -H "$AUTH" http://127.0.0.1:3210/sentry/status
+curl -X POST -H "$AUTH" http://127.0.0.1:3210/sentry/stop     # returns the session summary
 ```
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /sentry/start` | Start watching. Body: `target` (required), `allow`, `block`, `grace_seconds` (60), `interval_seconds` (10), `callback_url`, `callback_secret` |
+| `POST /sentry/start` | Start watching. Body: `target` (required), `allow`, `block`, `grace_seconds` (60), `interval_seconds` (10), `callback_url`, `callback_secret`, `context` (opaque, max 2 KB, echoed in callbacks, status and summary) |
 | `POST /sentry/stop` | Stop and return a summary: duration, focused/off-task/unknown seconds, violations, distraction events with app/title/url/time |
 | `GET /sentry/status` | Whether a session runs, current app/tab and label, totals, level, last permission error |
 
@@ -240,6 +252,11 @@ Config lives at `~/.sparky/config.json`, created on first launch:
   "api_port": 3210
 }
 ```
+
+Optional keys:
+
+- `api_token`: shared token for the `/sentry/*` endpoints (see Sentry Mode above). The
+  `SPARKY_API_TOKEN` environment variable overrides it. Without either, Sentry Mode is disabled.
 
 - Window position/size are saved to `~/.sparky/window_state.json`.
 - Uploaded `/speak` audio is written to `~/.sparky/tmp/` and overwritten on each call.
@@ -279,9 +296,9 @@ Any TTS engine that produces a supported audio file can drive
 - **Sentry Mode sees only the front window** - it reads the frontmost app, window title and the
   active tab of Safari, Chrome, Arc, Brave and Edge. Firefox, Zen, Opera, Vivaldi and Orion are
   judged by window title only, and it cannot tell whether you are actually looking at the screen. The Sentry
-  endpoints refuse browser pages (any `Origin` other than the pet's own webview), but window
-  titles and URLs are still available to any non-browser client that can reach the API, so keep
-  it on your private tailnet.
+  endpoints require the shared `api_token` (Bearer) and refuse browser pages (any `Origin` other
+  than the pet's own webview). Anyone holding the token can read window titles and URLs, so keep
+  it secret and keep the API on your private tailnet.
 
 ## License
 

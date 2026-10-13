@@ -529,8 +529,8 @@ listen("sentry:violation", () => {
 });
 
 // Restore the indicator after a webview reload while a session is running.
-fetch("http://127.0.0.1:3210/sentry/status")
-  .then((r) => r.json())
+// Read over IPC: the HTTP /sentry/* endpoints need the agent's API token.
+invoke<Partial<SentryState>>("sentry_status")
   .then((s) => {
     if (sentryEventSeen) return; // a newer event already rendered the state
     renderSentry({
@@ -541,5 +541,5 @@ fetch("http://127.0.0.1:3210/sentry/status")
     });
   })
   .catch(() => {
-    // API not up yet; the next sentry:state event will update the indicator.
+    // State not ready yet; the next sentry:state event will update the indicator.
   });

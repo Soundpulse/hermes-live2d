@@ -225,6 +225,22 @@ than `grace_seconds`, a violation fires: the pet switches to expression 4 (angry
 the violation to `callback_url` or, if there is none or it fails, shows a plain English fallback
 roast in the speech bubble. When no session runs, nothing is monitored.
 
+**Authentication:** every `/sentry/*` request needs `Authorization: Bearer <token>`, where the
+token is `SPARKY_API_TOKEN` from Sparky's environment or `api_token` in `~/.sparky/config.json`
+(the environment wins). The comparison is constant time. Responses:
+
+| Situation | Status | `message` |
+|---|---|---|
+| No token configured on the Mac | 503 | `sentry endpoints are disabled: ...` |
+| No `Authorization: Bearer` header | 401 | `sentry endpoints need an Authorization: Bearer <SPARKY_API_TOKEN> header` |
+| Wrong token | 401 | `invalid API token` |
+| Browser `Origin` other than the pet's webview | 403 | `sentry endpoints are not available to browser pages` |
+
+So Sentry Mode is off until a token is set, and a request without `Origin` is no longer trusted
+on that basis alone. 401 responses carry `WWW-Authenticate: Bearer`. The pet's own indicator reads
+the state through the `sentry_status` Tauri command, not over HTTP. The other endpoints are not
+affected by the token.
+
 **Classification rules** (first match wins):
 
 1. Request `block`
@@ -264,26 +280,30 @@ neither adds to nor resets the streak. Gaps between samples are capped at
 | `interval_seconds` | number | no | Sampling interval (default `10`, range `2` to `300`) |
 | `callback_url` | string | no | `http(s)` URL that receives violation events (no credentials in the URL) |
 | `callback_secret` | string | no | If set, callbacks are signed as a Hermes generic webhook V2 |
+| `context` | object or string | no | Opaque caller data, at most 2048 bytes as JSON. Never interpreted; echoed unchanged as `context` in every callback, in `GET /sentry/status` and in the stop `summary`. Agents put the originating chat here, e.g. `{"platform": "discord", "chat_id": "123"}` |
 
 Starting while a session runs replaces it; the old session's summary is returned as
 `previous_summary`.
 
 ```bash
 curl -X POST http://127.0.0.1:3210/sentry/start \
+  -H "Authorization: Bearer $SPARKY_API_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"target": "study for AWS exam", "block": ["discord"], "grace_seconds": 60,
-       "callback_url": "https://hermes.my-tailnet.ts.net/webhooks/sparky-sentry"}'
+       "callback_url": "https://hermes.my-tailnet.ts.net/webhooks/sparky-sentry",
+       "context": {"platform": "discord", "chat_id": "123456789"}}'
 ```
 
 **Response:** `{"ok": true, "message": "sentry started", "status": {...}, "previous_summary": null}`
-(`status` has the same shape as `GET /sentry/status`). Invalid input returns HTTP 400 with the
-common error format.
+(`status` has the same shape as `GET /sentry/status`). Invalid input, including a `context` that
+is not an object or string or is larger than 2048 bytes, returns HTTP 400 with the common error
+format.
 
 All `/sentry/*` endpoints are for agents and scripts, not web pages: they are served without the
 permissive CORS headers of the other endpoints, and a request carrying a browser `Origin` header
 gets HTTP 403 unless the origin is the pet's own webview (`tauri://localhost`,
-`http(s)://tauri.localhost`, or the dev server `http://localhost:1420`). Clients such as `curl`
-and `sentry.sh` send no `Origin` and are unaffected.
+`http(s)://tauri.localhost`, or the dev server `http://localhost:1420`). That check comes on top
+of the token, never instead of it.
 
 #### POST /sentry/stop
 
@@ -317,7 +337,8 @@ Stops the session and returns its summary. Calling it when nothing runs returns
       {"label": "unknown", "app": "Discord", "title": "#general", "url": null, "reason": null,
        "started_at": "2026-10-13T09:10:00Z", "ended_at": "2026-10-13T09:12:00Z", "seconds": 120}
     ],
-    "events_truncated": false
+    "events_truncated": false,
+    "context": {"platform": "discord", "chat_id": "123456789"}
   }
 }
 ```
@@ -348,7 +369,8 @@ merged; capped at 500 entries). Timestamps are UTC.
   "current": {"app": "Code", "title": "main.rs", "url": null, "label": "allowed",
               "reason": "default allow: code"},
   "last_sample_at": "2026-10-13T08:30:30Z",
-  "last_error": null
+  "last_error": null,
+  "context": {"platform": "discord", "chat_id": "123456789"}
 }
 ```
 
@@ -374,9 +396,12 @@ callback problem, e.g. a missing macOS Automation/Accessibility permission.
   "violations": 1,
   "ts": "2026-10-13T08:30:00Z",
   "ts_unix": 1791880200,
-  "session_started_at": "2026-10-13T08:00:00Z"
+  "session_started_at": "2026-10-13T08:00:00Z",
+  "context": {"platform": "discord", "chat_id": "123456789"}
 }
 ```
+
+`context` is the value given to `POST /sentry/start`, or `null` when none was given.
 
 With `callback_secret`, two more headers are sent: `X-Webhook-Timestamp: <unix seconds>` and
 `X-Webhook-Signature-V2: <hex HMAC-SHA256 of "<timestamp>.<raw body>">`, which a Hermes webhook

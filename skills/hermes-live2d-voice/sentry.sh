@@ -6,12 +6,17 @@
 #   sentry.sh stop             # prints the session summary JSON
 #   sentry.sh status
 #
-# Requires: SPARKY_SPEAK_URL (same pet URL that speak.sh uses).
+# Requires: SPARKY_SPEAK_URL (same pet URL that speak.sh uses) and
+# SPARKY_API_TOKEN (the same token configured on the Mac; it is sent as
+# `Authorization: Bearer <token>`, never printed).
 # Optional: SPARKY_SPEAK_PROXY, SPARKY_SENTRY_CALLBACK_URL, SPARKY_SENTRY_CALLBACK_SECRET.
 # On `start`, callback_url is injected from the environment unless the JSON
 # already sets one. The secret is added only when the effective callback_url
 # equals SPARKY_SENTRY_CALLBACK_URL, so it never has to appear on the command
 # line and is never sent to a different URL.
+# If the JSON has no `context`, one is filled from HERMES_SESSION_PLATFORM,
+# HERMES_SESSION_CHAT_ID and HERMES_SESSION_THREAD_ID when they are set, so
+# violation callbacks can be routed back to the chat that started the session.
 #
 # Exit codes: 0 success; 1 caller/setup error or rejected request; 2 pet unreachable.
 set -uo pipefail
@@ -46,6 +51,18 @@ if action == "start":
         and str(payload.get("callback_url", "")).strip() == cb_url.strip()
     ):
         payload["callback_secret"] = cb_secret
+    if "context" not in payload:
+        origin = {
+            key: os.environ[env].strip()
+            for key, env in (
+                ("platform", "HERMES_SESSION_PLATFORM"),
+                ("chat_id", "HERMES_SESSION_CHAT_ID"),
+                ("thread_id", "HERMES_SESSION_THREAD_ID"),
+            )
+            if os.environ.get(env, "").strip()
+        }
+        if origin.get("platform") and origin.get("chat_id"):
+            payload["context"] = origin
     req = urllib.request.Request(
         base + "/sentry/start",
         data=json.dumps(payload).encode(),
@@ -57,6 +74,11 @@ elif action == "status":
     req = urllib.request.Request(base + "/sentry/status")
 else:
     sys.exit(f"sentry.sh: unknown action: {action} (use start, stop or status)")
+
+token = os.environ.get("SPARKY_API_TOKEN", "").strip()
+if not token:
+    sys.exit("sentry.sh: SPARKY_API_TOKEN is not set (it must match the token configured on the Mac)")
+req.add_header("Authorization", f"Bearer {token}")
 
 proxy = os.environ.get("SPARKY_SPEAK_PROXY")
 if proxy:
