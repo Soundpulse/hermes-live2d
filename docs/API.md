@@ -222,8 +222,8 @@ samples the frontmost app, its window title and, for Safari, Chrome, Arc, Brave 
 active tab URL and title every `interval_seconds` (via `osascript`; no screenshots). Each sample is
 classified as `allowed`, `blocked` or `unknown`. When the user stays on blocked content longer
 than `grace_seconds`, a violation fires: the pet switches to expression 4 (angry) and either POSTs
-the violation to `callback_url` or, if there is none or it fails, shows a Cantonese fallback roast
-in the speech bubble. When no session runs, nothing is monitored.
+the violation to `callback_url` or, if there is none or it fails, shows a plain English fallback
+roast in the speech bubble. When no session runs, nothing is monitored.
 
 **Classification rules** (first match wins):
 
@@ -244,6 +244,8 @@ List entries can be a domain (`reddit.com`, matches subdomains), a domain with a
 `visual studio code`). Keywords match app names, single-word keywords also match a host label,
 and request keywords additionally match tab and window titles. For browser tabs the URL decides,
 never the browser's own app name. If a tab URL cannot be read, the tab title is used instead.
+Browsers without a scriptable tab URL (Firefox, Zen, Opera, Vivaldi, Orion) are always judged by
+window title.
 
 **Escalation:** blocked time accumulates into a streak. Each time the streak gains another
 `grace_seconds` of blocked time, a violation fires with `level` = violation count in the session,
@@ -255,12 +257,12 @@ neither adds to nor resets the streak. Gaps between samples are capped at
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `target` | string | yes | What the user is supposed to be doing, e.g. `"溫書 AWS exam"` (max 200 chars) |
+| `target` | string | yes | What the user is supposed to be doing, e.g. `"study for AWS exam"` (max 200 chars) |
 | `allow` | string[] | no | Extra on-task domains, paths, keywords or app names |
 | `block` | string[] | no | Extra distraction domains, paths, keywords or app names |
 | `grace_seconds` | number | no | Continuous blocked time before a violation (default `60`, max `3600`) |
 | `interval_seconds` | number | no | Sampling interval (default `10`, range `2` to `300`) |
-| `callback_url` | string | no | `http(s)` URL that receives violation events |
+| `callback_url` | string | no | `http(s)` URL that receives violation events (no credentials in the URL) |
 | `callback_secret` | string | no | If set, callbacks are signed as a Hermes generic webhook V2 |
 
 Starting while a session runs replaces it; the old session's summary is returned as
@@ -269,13 +271,19 @@ Starting while a session runs replaces it; the old session's summary is returned
 ```bash
 curl -X POST http://127.0.0.1:3210/sentry/start \
   -H 'Content-Type: application/json' \
-  -d '{"target": "溫書 AWS exam", "block": ["discord"], "grace_seconds": 60,
+  -d '{"target": "study for AWS exam", "block": ["discord"], "grace_seconds": 60,
        "callback_url": "https://hermes.my-tailnet.ts.net/webhooks/sparky-sentry"}'
 ```
 
 **Response:** `{"ok": true, "message": "sentry started", "status": {...}, "previous_summary": null}`
 (`status` has the same shape as `GET /sentry/status`). Invalid input returns HTTP 400 with the
 common error format.
+
+All `/sentry/*` endpoints are for agents and scripts, not web pages: they are served without the
+permissive CORS headers of the other endpoints, and a request carrying a browser `Origin` header
+gets HTTP 403 unless the origin is the pet's own webview (`tauri://localhost`,
+`http(s)://tauri.localhost`, or the dev server `http://localhost:1420`). Clients such as `curl`
+and `sentry.sh` send no `Origin` and are unaffected.
 
 #### POST /sentry/stop
 
@@ -288,7 +296,7 @@ Stops the session and returns its summary. Calling it when nothing runs returns
   "active": false,
   "message": "sentry stopped",
   "summary": {
-    "target": "溫書 AWS exam",
+    "target": "study for AWS exam",
     "started_at": "2026-10-13T08:00:00Z",
     "ended_at": "2026-10-13T10:00:00Z",
     "duration_seconds": 7200,
@@ -323,7 +331,7 @@ merged; capped at 500 entries). Timestamps are UTC.
 {
   "ok": true,
   "active": true,
-  "target": "溫書 AWS exam",
+  "target": "study for AWS exam",
   "started_at": "2026-10-13T08:00:00Z",
   "elapsed_seconds": 1830,
   "grace_seconds": 60,
@@ -357,7 +365,7 @@ callback problem, e.g. a missing macOS Automation/Accessibility permission.
   "type": "sentry_violation",
   "event_type": "sentry_violation",
   "level": 1,
-  "target": "溫書 AWS exam",
+  "target": "study for AWS exam",
   "app": "Google Chrome",
   "title": "Funny cats - YouTube",
   "url": "https://www.youtube.com/watch?v=abc",

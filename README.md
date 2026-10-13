@@ -134,7 +134,7 @@ asleep or offline.
 ## Sentry Mode: your agent watches you study
 
 Tell your hermes agent, in plain conversation, that you want to focus. For example
-「幫我開sentry mode，我而家溫AWS」 or "watch me while I finish this PR". There is no command to
+"turn on sentry mode, I'm studying for AWS" or "watch me while I finish this PR". There is no command to
 type and no button on the pet: the agent understands the request, infers the target, and calls
 the pet's `POST /sentry/start` endpoint itself. When you say you are done, it calls
 `POST /sentry/stop` and posts a recap of the session in chat.
@@ -145,17 +145,18 @@ Stack Overflow, AWS docs, Coursera, Notion, Google Docs, your IDE and terminal) 
 Distractions (YouTube, Reddit, Instagram, TikTok, X, Facebook, Twitch, Netflix, Bilibili,
 Xiaohongshu, games) count as off-task. Anything else is neutral and simply logged. Stay on a
 distraction longer than the grace period (60 s by default) and Sparky gets angry: the agent
-receives a webhook, writes an escalating Cantonese roast, and plays it through the pet with the
-angry face. Level 3 earns a public roast in the Discord channel. Without an agent callback the
-pet shows a local roast bubble instead.
+receives a webhook, writes an escalating roast in your language and its persona's voice, and
+plays it through the pet with the angry face. Level 3 earns a public roast in the chat channel
+where you started the session. Without an agent callback the pet shows a local roast bubble
+instead.
 
 ```
-you: 幫我開sentry mode，我而家溫AWS
-agent ──► POST /sentry/start {"target": "溫AWS", "callback_url": ...} ──► Sparky starts watching
+you: turn on sentry mode, I'm studying for AWS
+agent ──► POST /sentry/start {"target": "study for AWS exam", "callback_url": ...} ──► Sparky starts watching
            ... you open YouTube for over a minute ...
 Sparky ──► angry face + POST callback {"type": "sentry_violation", "level": 1, ...} ──► agent
 agent ──► text_to_speech roast ──► POST /speak (expression 4) ──► Sparky roasts you
-you: 溫完喇
+you: I'm done
 agent ──► POST /sentry/stop ──► summary (focus time, distractions) ──► recap in chat
 ```
 
@@ -202,12 +203,11 @@ curl -X POST http://127.0.0.1:3210/expression \
 curl -X POST http://127.0.0.1:3210/bubble \
   -H 'Content-Type: application/json' \
   -d '{"text": "thinking...", "duration": 3000}'
-```
 
 # Sentry Mode (normally called by your agent, not by hand)
 curl -X POST http://127.0.0.1:3210/sentry/start \
   -H 'Content-Type: application/json' \
-  -d '{"target": "溫書 AWS exam", "block": ["discord"], "grace_seconds": 60}'
+  -d '{"target": "study for AWS exam", "block": ["discord"], "grace_seconds": 60}'
 curl http://127.0.0.1:3210/sentry/status
 curl -X POST http://127.0.0.1:3210/sentry/stop     # returns the session summary
 ```
@@ -277,10 +277,11 @@ Any TTS engine that produces a supported audio file can drive
   it to trusted devices (e.g. a private tailnet), never the public internet.
 - **Mouse tracking via Tauri** — `cursor_position()` behavior can vary across macOS versions.
 - **Sentry Mode sees only the front window** - it reads the frontmost app, window title and the
-  active tab of Safari, Chrome, Arc, Brave and Edge. Firefox and other browsers are judged by
-  window title only, and it cannot tell whether you are actually looking at the screen. Window
-  titles and URLs are available to anyone who can reach the API, so keep it on your private
-  tailnet.
+  active tab of Safari, Chrome, Arc, Brave and Edge. Firefox, Zen, Opera, Vivaldi and Orion are
+  judged by window title only, and it cannot tell whether you are actually looking at the screen. The Sentry
+  endpoints refuse browser pages (any `Origin` other than the pet's own webview), but window
+  titles and URLs are still available to any non-browser client that can reach the API, so keep
+  it on your private tailnet.
 
 ## License
 

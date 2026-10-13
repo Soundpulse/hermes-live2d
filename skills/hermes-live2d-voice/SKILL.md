@@ -91,19 +91,19 @@ mood → id for the new model before routing real recordings.
 
 Sparky can watch the user's screen activity (frontmost app, window title, browser tab) and get
 angry when they slack off. **You turn it on and off from normal conversation.** There is no
-command syntax and no pet button: when the user says something like 「幫我開sentry mode，我而家溫AWS」
-or "watch me while I study", you infer the target and start it; when they say they are done, you
-stop it and post the summary.
+command syntax and no pet button: when the user says something like "turn on sentry mode, I'm
+studying for AWS" or "watch me while I study", you infer the target and start it; when they say
+they are done ("I'm done"), you stop it and post the summary.
 
 ```bash
-{skill_dir}/sentry.sh start '{"target":"溫書 AWS exam"}'   # optional: allow, block, grace_seconds, interval_seconds
+{skill_dir}/sentry.sh start '{"target":"study for AWS exam"}'   # optional: allow, block, grace_seconds, interval_seconds
 {skill_dir}/sentry.sh status
-{skill_dir}/sentry.sh stop                                  # returns the session summary
+{skill_dir}/sentry.sh stop                                       # returns the session summary
 ```
 
 On a violation the pet calls back into Hermes (webhook) with the level (1 tease, 2 harsher,
-3 public execution in the Discord channel). You write a Cantonese MK-girl roast, TTS it, and
-play it with `speak.sh <file> 4 "<roast>"`.
+3 public callout in the chat channel where the session started). You write the roast in the
+user's language and your persona's voice, TTS it, and play it with `speak.sh <file> 4 "<roast>"`.
 
 **Read [`references/sentry-mode.md`](references/sentry-mode.md) before starting a session** for
 argument inference, the callback payload, roast escalation rules, the summary format and the

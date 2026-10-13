@@ -718,18 +718,21 @@ impl Engine {
 
 // ── Local fallback roasts ───────────────────────────────────────
 
-/// Cantonese bubble text used when no `callback_url` is configured (or the
-/// callback fails), so the pet still scolds locally.
+/// Plain English bubble text used when no `callback_url` is configured (or
+/// the callback fails), so the pet still scolds locally. Agents with a
+/// callback write their own lines in the user's language and persona.
 pub fn fallback_roast(level: u8, target: &str) -> String {
     let target = if target.trim().is_empty() {
-        "溫書"
+        "your task"
     } else {
         target.trim()
     };
     match level {
-        0 | 1 => format!("喂！你話{target}㗎喎，碌乜嘢呀？返去{target}！"),
-        2 => format!("又嚟？！第二次喇！{target}呢？你係咪唔想合格呀？即刻返去！"),
-        _ => format!("第三次！我真係嬲㗎喇！再唔返去{target}，我就公開處刑你！"),
+        0 | 1 => format!("Hey! You promised \"{target}\". What is this? Back to it!"),
+        2 => format!("Again? That's strike two. What happened to \"{target}\"? Back to it, now!"),
+        _ => format!(
+            "Strike three! I'm really mad now. Get back to \"{target}\" or everyone hears about it!"
+        ),
     }
 }
 
@@ -885,7 +888,7 @@ mod tests {
     fn engine(grace: u64, interval: u64, allow: &[&str], block: &[&str]) -> Engine {
         Engine::new(
             SessionConfig {
-                target: "溫書 AWS exam".into(),
+                target: "study for AWS exam".into(),
                 grace_seconds: grace,
                 interval_seconds: interval,
             },
@@ -1377,9 +1380,14 @@ mod tests {
 
     #[test]
     fn fallback_roasts_escalate() {
-        assert!(fallback_roast(1, "溫書").contains("碌乜嘢"));
-        assert!(fallback_roast(2, "AWS").contains("第二次"));
-        assert!(fallback_roast(3, "").contains("公開處刑"));
-        assert!(fallback_roast(9, "x").contains("第三次"));
+        let l1 = fallback_roast(1, "study for AWS exam");
+        assert!(l1.contains("\"study for AWS exam\""));
+        assert!(l1.contains("Back to it"));
+        assert!(fallback_roast(2, "AWS").contains("strike two"));
+        assert!(fallback_roast(3, "").contains("your task"));
+        assert!(fallback_roast(9, "x").contains("Strike three"));
+        for level in 0..=4 {
+            assert!(fallback_roast(level, "x").is_ascii());
+        }
     }
 }

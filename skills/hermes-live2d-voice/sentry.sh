@@ -2,7 +2,7 @@
 # Control Sentry Mode on the Sparky Live2D desktop pet.
 #
 # Usage:
-#   sentry.sh start '<json>'   # e.g. '{"target":"溫書 AWS exam","block":["discord"]}'
+#   sentry.sh start '<json>'   # e.g. '{"target":"study for AWS exam","block":["discord"]}'
 #   sentry.sh stop             # prints the session summary JSON
 #   sentry.sh status
 #
