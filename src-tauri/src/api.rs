@@ -246,6 +246,25 @@ async fn lipsync_stop_handler(
     Ok(ApiResponse::success("lipsync stop event emitted"))
 }
 
+// ── Sentry Mode ─────────────────────────────────────────────────
+
+async fn sentry_start_handler(
+    State(app): State<AppHandle>,
+    Json(payload): Json<crate::sentry::StartReq>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiResponse>)> {
+    crate::sentry::start(&app, payload)
+        .map(Json)
+        .map_err(ApiResponse::error)
+}
+
+async fn sentry_stop_handler(State(app): State<AppHandle>) -> Json<serde_json::Value> {
+    Json(crate::sentry::stop(&app))
+}
+
+async fn sentry_status_handler(State(app): State<AppHandle>) -> Json<serde_json::Value> {
+    Json(crate::sentry::status(&app))
+}
+
 // ── Audio file serving ──────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -340,6 +359,9 @@ pub fn create_router(app_handle: AppHandle) -> Router {
         .route("/bubble", post(bubble_handler))
         .route("/lipsync/start", post(lipsync_start_handler))
         .route("/lipsync/stop", post(lipsync_stop_handler))
+        .route("/sentry/start", post(sentry_start_handler))
+        .route("/sentry/stop", post(sentry_stop_handler))
+        .route("/sentry/status", get(sentry_status_handler))
         .route("/audio", get(audio_handler))
         .route("/model/{*path}", get(model_handler))
         .layer(CorsLayer::permissive())

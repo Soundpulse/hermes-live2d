@@ -1,5 +1,6 @@
 mod api;
 mod config;
+mod sentry;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
@@ -80,6 +81,9 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+
+            // Sentry Mode session state, shared with the HTTP API handlers.
+            app.manage(sentry::SentryState::default());
 
             let cfg = config::load_config();
             println!("Sparky config dir: {}", config::sparky_dir().display());
